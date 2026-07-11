@@ -12,6 +12,7 @@ import PropertyModeration from './pages/PropertyModeration.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import Reports from './pages/Reports.jsx';
 import SupportAndAI from './pages/SupportAndAI.jsx';
+import AdminTeam from './pages/AdminTeam.jsx';
 
 /**
  * The admin console is served at the ROOT of its own subdomain
@@ -40,6 +41,7 @@ function App() {
             <Route path="users" element={<UserManagement />} />
             <Route path="reports" element={<Reports />} />
             <Route path="support" element={<SupportAndAI />} />
+            <Route path="team" element={<AdminTeam />} />
           </Route>
 
           {/* Unknown paths → home (which itself gates to /login if needed) */}

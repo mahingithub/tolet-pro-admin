@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Building, Users, MessageSquare,
-  LogOut, Search, ChevronDown, Menu, X, Home, Flag,
+  LogOut, Search, ChevronDown, Menu, X, Home, Flag, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import { toast } from 'sonner';
@@ -25,7 +25,8 @@ const ROLE_LABELS = {
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, hasRole } = useAuth();
+  const isSuperAdmin = hasRole('super_admin');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,7 +42,9 @@ const AdminLayout = () => {
     { path: '/users', icon: Users, label: 'User Management' },
     { path: '/reports', icon: Flag, label: 'User Reports' },
     { path: '/support', icon: MessageSquare, label: 'Support & AI' },
-  ];
+    // Admin team management is super-admin only.
+    { path: '/team', icon: ShieldCheck, label: 'Admin Team', superAdmin: true },
+  ].filter((item) => !item.superAdmin || isSuperAdmin);
 
   const isActivePath = (path) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
