@@ -4,7 +4,7 @@ import { useAuth } from '../context/AdminAuthContext';
 import {
   Users, Search, ShieldCheck, ShieldAlert, ShieldX, CheckCircle2,
   XCircle, AlertTriangle, Ban, RotateCcw, FileImage, Eye, Clock,
-  BadgeCheck, Loader2, Trash2
+  RefreshCw, BadgeCheck, Loader2, Trash2
 } from 'lucide-react';
 import {
   listUsers,
