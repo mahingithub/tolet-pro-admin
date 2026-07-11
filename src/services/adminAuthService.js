@@ -41,3 +41,22 @@ export async function logout() {
   clearSession({ silent: true });
   return { ok: true };
 }
+
+/** PATCH /admin/auth/me — update own profile (name/email). Refreshes the cache. */
+export async function updateMe(patch) {
+  const data = await apiFetch('/admin/auth/me', { method: 'PATCH', body: patch });
+  setSession({ admin: data.admin });
+  return data.admin;
+}
+
+/**
+ * POST /admin/auth/change-password — { currentPassword, newPassword }.
+ * On success the backend revokes all sessions, so the caller should log out
+ * and send the user back to /login.
+ */
+export async function changePassword({ currentPassword, newPassword }) {
+  return apiFetch('/admin/auth/change-password', {
+    method: 'POST',
+    body: { currentPassword, newPassword },
+  });
+}

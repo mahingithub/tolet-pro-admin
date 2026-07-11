@@ -5,6 +5,7 @@ import {
   login as svcLogin,
   logout as svcLogout,
   fetchMe,
+  updateMe as svcUpdateMe,
 } from '../services/adminAuthService.js';
 import { getAdmin, getToken, onSessionCleared } from '../services/session.js';
 
@@ -73,6 +74,12 @@ export const AdminAuthProvider = ({ children }) => {
 
       refresh: async () => {
         const admin = await fetchMe();
+        setUser(admin);
+        return admin;
+      },
+
+      updateProfile: async (patch) => {
+        const admin = await svcUpdateMe(patch);
         setUser(admin);
         return admin;
       },
