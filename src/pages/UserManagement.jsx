@@ -87,6 +87,11 @@ const InfoRow = ({ label, value, mono }) => (
 
 const PROFESSION_LABELS = {
   student:        'Student',
+  // Current profile editor values (TenantProfileFields.jsx)
+  job:            'Job holder',
+  business:       'Business',
+  doctor:         'Doctor',
+  // Legacy values kept for older records / VerificationModal
   employed:       'Employed',
   'self-employed':'Self-employed',
   other:          'Other',
