@@ -27,6 +27,13 @@ export const getOverviewStats = async () => {
   return data.stats || {};
 };
 
+// "Interested in selling" demand gauge (Coming Soon lead capture).
+// Returns { stats: { total, registered, guests, last7d }, recent: [...] }.
+export const getSellInterest = async (kind = 'sell') => {
+  const qs = toQuery({ kind });
+  return admin(qs ? `/sell-interest?${qs}` : '/sell-interest');
+};
+
 // ─── Users + KYC ────────────────────────────────────────────────────────────
 export const listUsers = async (filter = {}) => {
   const qs = toQuery(filter);

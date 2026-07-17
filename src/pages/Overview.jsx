@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users, Building, DollarSign, Activity,
-  ShieldAlert, ArrowUpRight, AlertCircle, Clock, Ban,
+  ShieldAlert, ArrowUpRight, AlertCircle, Clock, Ban, Store,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { getOverviewStats } from '../services/adminService';
+import { getOverviewStats, getSellInterest } from '../services/adminService';
 
 // Formatter for big counts. Small numbers are shown as-is; ≥100k → "K"; ≥1M → "M".
 const fmtCount = (n) => {
@@ -16,19 +16,34 @@ const fmtCount = (n) => {
   return v.toLocaleString('en-IN');
 };
 
+// Short "12 Jul" style date for the recent-interest follow-up list.
+const fmtDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+};
+
 const Overview = () => {
   const navigate = useNavigate();
   const [stats, setStats]   = useState(null);
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(true);
+  const [sellInterest, setSellInterest] = useState(null); // { stats, recent }
 
   useEffect(() => {
     let cancelled = false;
     const hydrate = async () => {
       try {
-        const data = await getOverviewStats();
+        // Sell-interest is best-effort: a failure there must not blank the
+        // whole overview, so it's caught independently.
+        const [data, si] = await Promise.all([
+          getOverviewStats(),
+          getSellInterest().catch(() => null),
+        ]);
         if (cancelled) return;
         setStats(data);
+        setSellInterest(si);
         setError('');
       } catch (err) {
         if (cancelled) return;
@@ -128,6 +143,75 @@ const Overview = () => {
           </div>
         ))}
       </div>
+
+      {/* Interested in Selling — demand gauge (Coming Soon lead capture) */}
+      {(() => {
+        const si = sellInterest?.stats || {
+          total: stats?.sellInterestTotal ?? 0,
+          registered: stats?.sellInterestRegistered ?? 0,
+          guests: stats?.sellInterestGuests ?? 0,
+          last7d: 0,
+        };
+        const recent = sellInterest?.recent || [];
+        return (
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#ba0036]/10 flex items-center justify-center">
+                  <Store size={20} className="text-[#ba0036]" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-gray-900">Interested in Selling</h3>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
+                    "Sell my property" · Coming Soon demand
+                  </p>
+                </div>
+              </div>
+              <span className="text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest bg-amber-50 text-amber-600 border border-amber-100">
+                {fmtCount(si.last7d ?? 0)} this week
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6">
+              {/* Headline count + breakdown */}
+              <div>
+                <p className="text-5xl font-black text-gray-900 leading-none">{fmtCount(si.total ?? 0)}</p>
+                <p className="text-xs font-bold text-gray-500 mt-2">people interested</p>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  <span className="text-[10px] font-black px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100">
+                    {fmtCount(si.registered ?? 0)} registered
+                  </span>
+                  <span className="text-[10px] font-black px-2 py-1 rounded-md bg-gray-50 text-gray-500 border border-gray-100">
+                    {fmtCount(si.guests ?? 0)} guest
+                  </span>
+                </div>
+              </div>
+
+              {/* Recent follow-up list */}
+              <div className="lg:border-l lg:border-gray-100 lg:pl-6">
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-3">Recent follow-ups</p>
+                {recent.length === 0 ? (
+                  <p className="text-xs font-bold text-gray-400">No interest recorded yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                    {recent.slice(0, 8).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-gray-800 truncate">{r.name || 'Guest'}</p>
+                          <p className="text-[11px] font-bold text-gray-400 truncate">
+                            {r.phone || (r.userId ? 'Registered user' : 'Anonymous')}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-bold text-gray-400 shrink-0">{fmtDate(r.createdAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Bottom section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
