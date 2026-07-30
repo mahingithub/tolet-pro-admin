@@ -61,10 +61,17 @@ export const AdminAuthProvider = ({ children }) => {
       activeRole: user?.role || roles[0] || null,
       hasRole: (r) => roles.includes(r),
 
-      login: async ({ phone, password }) => {
-        const admin = await svcLogin({ phone, password });
-        setUser(admin);
-        return admin;
+      login: async ({ phone, password, tempToken, token, is2FAVerification }) => {
+        const result = await svcLogin({ phone, password, tempToken, token, is2FAVerification });
+        
+        // If 2FA is required, return the response without setting user
+        if (result?.requires2FA && result?.tempToken) {
+          return result;
+        }
+        
+        // Normal login or successful 2FA verification
+        setUser(result);
+        return result;
       },
 
       logout: async () => {

@@ -14,16 +14,36 @@ export { getAdmin, getToken };
 
 /**
  * POST /admin/auth/login — { phone, password }.
- * On success stores the admin-scoped token + admin profile and returns the
- * admin. A 403 (code 'admin_required') means valid credentials for a
- * non-admin account.
+ * On success, either:
+ *   - Returns { requires2FA: true, tempToken } if 2FA is enabled (no session stored yet)
+ *   - Stores the admin-scoped token + admin profile and returns the admin
+ * A 403 (code 'admin_required') means valid credentials for a non-admin account.
  */
-export async function login({ phone, password }) {
+export async function login({ phone, password, tempToken, token, is2FAVerification }) {
+  // If this is a 2FA verification step
+  if (is2FAVerification && tempToken && token) {
+    const data = await apiFetch('/admin/auth/verify-2fa-login', {
+      method: 'POST',
+      body: { tempToken, token },
+      auth: false,
+    });
+    setSession({ token: data.token, admin: data.admin });
+    return data.admin;
+  }
+
+  // Initial login with phone + password
   const data = await apiFetch('/admin/auth/login', {
     method: 'POST',
     body: { phone, password },
     auth: false,
   });
+
+  // If 2FA is required, return the response without storing session
+  if (data.requires2FA && data.tempToken) {
+    return data;
+  }
+
+  // Normal login (no 2FA)
   setSession({ token: data.token, admin: data.admin });
   return data.admin;
 }
@@ -59,4 +79,38 @@ export async function changePassword({ currentPassword, newPassword }) {
     method: 'POST',
     body: { currentPassword, newPassword },
   });
+}
+
+// ─── 2FA / Google Authenticator Management ─────────────────────────────────
+
+/**
+ * POST /admin/auth/2fa/generate — generates a new TOTP secret and QR code.
+ * Returns { secret, qrCode } where qrCode is a data URL.
+ */
+export async function generate2FASecret() {
+  return apiFetch('/admin/auth/2fa/generate', { method: 'POST' });
+}
+
+/**
+ * POST /admin/auth/2fa/enable — { secret, token }.
+ * Verifies the token and saves the secret, enabling 2FA for this admin.
+ */
+export async function enable2FA({ secret, token }) {
+  const data = await apiFetch('/admin/auth/2fa/enable', {
+    method: 'POST',
+    body: { secret, token },
+  });
+  return data;
+}
+
+/**
+ * POST /admin/auth/2fa/disable — { password }.
+ * Disables 2FA after verifying the admin's password.
+ */
+export async function disable2FA({ password }) {
+  const data = await apiFetch('/admin/auth/2fa/disable', {
+    method: 'POST',
+    body: { password },
+  });
+  return data;
 }

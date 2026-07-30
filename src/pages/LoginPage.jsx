@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Home, Phone, Lock, Loader2, ShieldCheck, AlertCircle, Eye, EyeOff, ArrowRight,
+  Home, Phone, Lock, Loader2, ShieldCheck, AlertCircle, Eye, EyeOff, ArrowRight, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 
@@ -10,9 +10,9 @@ const normalizePhone = (raw) => raw.replace(/\D/g, '').replace(/^0+/, '');
 const toE164 = (local) => `+880${local}`;
 
 /**
- * Dedicated admin login — phone + password only. No signup, no OTP, no role
- * picker. The backend's /admin/auth/login refuses non-admin accounts, so this
- * screen is the single door into the console.
+ * Dedicated admin login — phone + password, with optional 2FA step.
+ * If the backend returns requires2FA: true, we show the OTP input and call
+ * the /verify-2fa-login endpoint instead.
  */
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -24,6 +24,11 @@ const LoginPage = () => {
   const [showPw, setShowPw] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // 2FA state
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [tempToken, setTempToken] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   const nextUrl = searchParams.get('next');
 
@@ -46,7 +51,16 @@ const LoginPage = () => {
     setIsLoading(true);
     setError('');
     try {
-      await login({ phone: toE164(phone), password });
+      const result = await login({ phone: toE164(phone), password });
+      
+      // Check if 2FA is required
+      if (result?.requires2FA && result?.tempToken) {
+        setRequires2FA(true);
+        setTempToken(result.tempToken);
+        setIsLoading(false);
+        return;
+      }
+      
       goNext();
     } catch (err) {
       const msg = err?.code === 'admin_required'
@@ -58,6 +72,40 @@ const LoginPage = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleOTPSubmit = async (e) => {
+    e.preventDefault();
+    if (isLoading || !otpCode) return;
+    setIsLoading(true);
+    setError('');
+    try {
+      await login({ tempToken, token: otpCode, is2FAVerification: true });
+      goNext();
+    } catch (err) {
+      const msg = err?.code === 'invalid_otp'
+        ? 'Invalid OTP code. Please try again.'
+        : err?.code === 'temp_token_expired'
+          ? 'Session expired. Please login again.'
+          : err?.serverMessage || 'Verification failed. Please try again.';
+      setError(msg);
+      
+      // If temp token expired, reset to login form
+      if (err?.code === 'temp_token_expired') {
+        setRequires2FA(false);
+        setTempToken('');
+        setOtpCode('');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBackToLogin = () => {
+    setRequires2FA(false);
+    setTempToken('');
+    setOtpCode('');
+    setError('');
   };
 
   return (
@@ -109,76 +157,137 @@ const LoginPage = () => {
             <p className="text-xs font-semibold text-white/50 mt-0.5">Admin Console</p>
           </div>
 
-          <div className="mb-7">
-            <h2 className="text-2xl font-black tracking-tight">Sign in</h2>
-            <p className="text-sm text-white/50 mt-1">Access the administration console.</p>
-          </div>
-
-          {error && (
-            <div className="mb-5 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm font-semibold text-red-300 flex items-start gap-2" role="alert">
-              <AlertCircle size={16} className="shrink-0 mt-0.5" /> {error}
-            </div>
-          )}
-
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
-                Phone number
-              </label>
-              <div className="relative flex items-center bg-white/5 border border-white/10 rounded-xl focus-within:border-[#ba0036] focus-within:bg-white/10 transition-all overflow-hidden">
-                <div className="pl-3.5 pr-2.5 text-white/40"><Phone size={16} /></div>
-                <div className="px-1.5 py-3 border-l border-white/10 text-white/60 font-bold text-sm">+880</div>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(normalizePhone(e.target.value).slice(0, 10))}
-                  maxLength={10}
-                  placeholder="1XXXXXXXXX"
-                  inputMode="numeric"
-                  autoComplete="username"
-                  className="w-full bg-transparent py-3 pl-2 pr-4 text-sm font-bold text-white placeholder:text-white/30 outline-none tracking-wide"
-                  required
-                />
+          {!requires2FA ? (
+            // ── Phone + Password Form ──
+            <>
+              <div className="mb-7">
+                <h2 className="text-2xl font-black tracking-tight">Sign in</h2>
+                <p className="text-sm text-white/50 mt-1">Access the administration console.</p>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
-                Password
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-white/40">
-                  <Lock size={16} />
+              {error && (
+                <div className="mb-5 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm font-semibold text-red-300 flex items-start gap-2" role="alert">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" /> {error}
                 </div>
-                <input
-                  type={showPw ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  className="w-full pl-10 pr-11 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-semibold text-white placeholder:text-white/30 focus:bg-white/10 focus:border-[#ba0036] outline-none tracking-widest transition-all"
-                  required
-                  minLength={1}
-                />
+              )}
+
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div>
+                  <label className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
+                    Phone number
+                  </label>
+                  <div className="relative flex items-center bg-white/5 border border-white/10 rounded-xl focus-within:border-[#ba0036] focus-within:bg-white/10 transition-all overflow-hidden">
+                    <div className="pl-3.5 pr-2.5 text-white/40"><Phone size={16} /></div>
+                    <div className="px-1.5 py-3 border-l border-white/10 text-white/60 font-bold text-sm">+880</div>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(normalizePhone(e.target.value).slice(0, 10))}
+                      maxLength={10}
+                      placeholder="1XXXXXXXXX"
+                      inputMode="numeric"
+                      autoComplete="username"
+                      className="w-full bg-transparent py-3 pl-2 pr-4 text-sm font-bold text-white placeholder:text-white/30 outline-none tracking-wide"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-white/40">
+                      <Lock size={16} />
+                    </div>
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      className="w-full pl-10 pr-11 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-semibold text-white placeholder:text-white/30 focus:bg-white/10 focus:border-[#ba0036] outline-none tracking-widest transition-all"
+                      required
+                      minLength={1}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((s) => !s)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                      aria-label={showPw ? 'Hide password' : 'Show password'}
+                    >
+                      {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading || phone.length < 10 || !password}
+                  className="w-full mt-2 flex items-center justify-center gap-2 bg-[#ba0036] text-white py-3.5 rounded-xl font-bold text-sm shadow-[0_6px_20px_rgba(186,0,54,0.35)] hover:bg-[#a5002f] active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? <Loader2 className="animate-spin" size={18} /> : <>Sign in <ArrowRight size={16} /></>}
+                </button>
+              </form>
+            </>
+          ) : (
+            // ── 2FA OTP Form ──
+            <>
+              <div className="mb-7">
+                <h2 className="text-2xl font-black tracking-tight">Two-Factor Authentication</h2>
+                <p className="text-sm text-white/50 mt-1">Enter the 6-digit code from your authenticator app.</p>
+              </div>
+
+              {error && (
+                <div className="mb-5 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm font-semibold text-red-300 flex items-start gap-2" role="alert">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" /> {error}
+                </div>
+              )}
+
+              <form className="space-y-4" onSubmit={handleOTPSubmit}>
+                <div>
+                  <label className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
+                    Authentication Code
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-white/40">
+                      <KeyRound size={16} />
+                    </div>
+                    <input
+                      type="text"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-bold text-white placeholder:text-white/30 focus:bg-white/10 focus:border-[#ba0036] outline-none tracking-[0.5em] text-center transition-all"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading || otpCode.length !== 6}
+                  className="w-full mt-2 flex items-center justify-center gap-2 bg-[#ba0036] text-white py-3.5 rounded-xl font-bold text-sm shadow-[0_6px_20px_rgba(186,0,54,0.35)] hover:bg-[#a5002f] active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? <Loader2 className="animate-spin" size={18} /> : <>Verify <ArrowRight size={16} /></>}
+                </button>
+
                 <button
                   type="button"
-                  onClick={() => setShowPw((s) => !s)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-white/40 hover:text-white/70 transition-colors"
-                  aria-label={showPw ? 'Hide password' : 'Show password'}
+                  onClick={handleBackToLogin}
+                  disabled={isLoading}
+                  className="w-full text-sm text-white/50 hover:text-white/80 transition-colors font-semibold"
                 >
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  ← Back to login
                 </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || phone.length < 10 || !password}
-              className="w-full mt-2 flex items-center justify-center gap-2 bg-[#ba0036] text-white py-3.5 rounded-xl font-bold text-sm shadow-[0_6px_20px_rgba(186,0,54,0.35)] hover:bg-[#a5002f] active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? <Loader2 className="animate-spin" size={18} /> : <>Sign in <ArrowRight size={16} /></>}
-            </button>
-          </form>
+              </form>
+            </>
+          )}
 
           <div className="mt-8 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-white/30">
             <ShieldCheck size={13} /> Secured admin session
