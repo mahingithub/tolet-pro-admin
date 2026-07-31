@@ -10,11 +10,23 @@
  *     bounces to /login (handles token expiry / revocation gracefully)
  */
 
-import { getToken, clearSession } from './session.js';
+import { getToken, setSession, clearSession } from './session.js';
 
 export const API_BASE = (
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
 ).replace(/\/$/, '');
+
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+const subscribeTokenRefresh = (cb) => {
+  refreshSubscribers.push(cb);
+};
+
+const onRefreshed = (err) => {
+  refreshSubscribers.forEach((cb) => cb(err));
+  refreshSubscribers = [];
+};
 
 const buildUrl = (path) => `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
 
@@ -27,11 +39,16 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, header
 
   let res;
   try {
-    res = await fetch(buildUrl(path), {
+    const fetchOptions = {
       method,
       headers: finalHeaders,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    };
+    
+    // Always include credentials for API calls to send cookies
+    fetchOptions.credentials = 'include';
+    
+    res = await fetch(buildUrl(path), fetchOptions);
   } catch (netErr) {
     const err = new Error('Network error — is the API reachable?');
     err.code = 'network_error';
@@ -43,13 +60,60 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, header
   try { data = await res.json(); } catch { data = {}; }
 
   if (!res.ok) {
-    // Dead / expired / revoked admin token on an authed request → clear the
-    // session. The auth context listens for this and drops the user to /login.
-    // Skipped for the login call itself (auth:false), whose 401 is a bad
-    // password, not an expired session.
-    if (res.status === 401 && auth && getToken()) {
-      clearSession();
+    // Intercept 401 Unauthorized for token refresh
+    if (res.status === 401 && auth && getToken() && !path.includes('/auth/admin/login') && !path.includes('/auth/admin/refresh')) {
+      if (!isRefreshing) {
+        isRefreshing = true;
+        
+        try {
+          const refreshRes = await fetch(buildUrl('/auth/admin/refresh'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+          });
+          
+          if (!refreshRes.ok) {
+            throw new Error('Admin refresh failed');
+          }
+          
+          const refreshData = await refreshRes.json();
+          if (refreshData.token) {
+            setSession({ token: refreshData.token });
+            onRefreshed(null);
+          } else {
+            throw new Error('No admin token returned');
+          }
+        } catch (err) {
+          onRefreshed(err);
+          clearSession();
+        } finally {
+          isRefreshing = false;
+        }
+      }
+
+      return new Promise((resolve, reject) => {
+        subscribeTokenRefresh(async (err) => {
+          if (err) {
+            // Failed to refresh, return the original error to bubble up
+            const origErr = new Error(data.message || data.code || `Request failed (HTTP ${res.status}).`);
+            origErr.code = data.code;
+            origErr.status = res.status;
+            origErr.serverMessage = data.message;
+            origErr.details = data.details;
+            reject(origErr);
+          } else {
+            // Retry request with new token
+            try {
+              const retryData = await apiFetch(path, { method, body, auth, headers });
+              resolve(retryData);
+            } catch (retryErr) {
+              reject(retryErr);
+            }
+          }
+        });
+      });
     }
+
     const err = new Error(data.message || data.code || `Request failed (HTTP ${res.status}).`);
     err.code = data.code;
     err.status = res.status;
