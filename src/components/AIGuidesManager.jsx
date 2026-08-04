@@ -156,6 +156,7 @@ const AIGuidesManager = () => {
                 <option value="how_it_works">How it Works page</option>
                 <option value="support">Help &amp; Support page</option>
                 <option value="subscription">Subscription Page</option>
+                <option value="checkout">Checkout Page</option>
               </select>
             </div>
             <div>
@@ -245,6 +246,7 @@ const AIGuidesManager = () => {
                           support:      { label: 'Support',      cls: 'text-emerald-600 bg-emerald-50' },
                           assistant:    { label: 'Assistant',    cls: 'text-gray-500 bg-gray-100' },
                           subscription: { label: 'Subscription', cls: 'text-amber-600 bg-amber-50' },
+                          checkout:     { label: 'Checkout',     cls: 'text-pink-600 bg-pink-50' },
                         };
                         const meta = PLACEMENTS[g.placement] || PLACEMENTS.assistant;
                         const showAudience = g.placement === 'welcome' || g.placement === 'how_it_works';
