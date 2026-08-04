@@ -13,6 +13,7 @@ const EMPTY_GUIDE = {
   order: 0,
   placement: 'assistant',
   audience: 'all',
+  keywords: '',
 };
 
 const AIGuidesManager = () => {
@@ -129,6 +130,19 @@ const AIGuidesManager = () => {
                 placeholder="e.g. https://www.youtube.com/watch?v=..."
                 className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium focus:ring-2 focus:ring-[#ba0036]/20 outline-none"
               />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-black text-gray-700 uppercase tracking-widest mb-1.5">Match Keywords (comma-separated)</label>
+              <input
+                type="text"
+                value={Array.isArray(currentGuide.keywords) ? currentGuide.keywords.join(', ') : (currentGuide.keywords || '')}
+                onChange={(e) => setCurrentGuide({ ...currentGuide, keywords: e.target.value })}
+                placeholder="e.g. বাসা ছাড়া, leave house, notice, বাসা ভাড়া, rent house"
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium focus:ring-2 focus:ring-[#ba0036]/20 outline-none"
+              />
+              <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">
+                ইউজার AI চ্যাটে এই শব্দগুলোর কোনোটি লিখলে এই ভিডিওটি উত্তরের সাথে দেখানো হবে (বাংলা ও English দুটোই দিন)।
+              </p>
             </div>
             <div>
               <label className="block text-xs font-black text-gray-700 uppercase tracking-widest mb-1.5">Placement</label>
