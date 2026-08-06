@@ -79,7 +79,7 @@ const AIGuidesManager = () => {
           <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
             <Video className="text-[#ba0036]" /> AI Video Guides
           </h2>
-          <p className="text-xs font-bold text-gray-500 mt-1">Upload videos for the AI Assistant, Welcome Robot, the How it Works page and the Help &amp; Support page.</p>
+          <p className="text-xs font-bold text-gray-500 mt-1">Upload videos for the AI Assistant, Welcome Robot, the How it Works page, the Help &amp; Support page and the Free Pro Trial popup.</p>
         </div>
         {!isEditing && (
           <button
@@ -157,6 +157,7 @@ const AIGuidesManager = () => {
                 <option value="support">Help &amp; Support page</option>
                 <option value="subscription">Subscription Page</option>
                 <option value="checkout">Checkout Page</option>
+                <option value="free_trial_mode">Free Trial Mode (share task popup)</option>
               </select>
             </div>
             <div>
@@ -247,6 +248,7 @@ const AIGuidesManager = () => {
                           assistant:    { label: 'Assistant',    cls: 'text-gray-500 bg-gray-100' },
                           subscription: { label: 'Subscription', cls: 'text-amber-600 bg-amber-50' },
                           checkout:     { label: 'Checkout',     cls: 'text-pink-600 bg-pink-50' },
+                          free_trial_mode: { label: 'Free Trial Mode', cls: 'text-violet-600 bg-violet-50' },
                         };
                         const meta = PLACEMENTS[g.placement] || PLACEMENTS.assistant;
                         const showAudience = g.placement === 'welcome' || g.placement === 'how_it_works';
