@@ -134,3 +134,20 @@ export const logAuditAction = async (action, details = {}) => {
     return null;
   }
 };
+
+// ─── Subscriptions + marketing ──────────────────────────────────────────────
+// The plan/reachability table behind the Subscriptions page. `filter` accepts
+// { tier, installed, whatsapp, search, page, limit } and returns
+// { rows, total, page, limit, counts }.
+export const listSubscriptions = async (filter = {}) => {
+  const qs = toQuery(filter);
+  return admin(qs ? `/subscriptions?${qs}` : '/subscriptions');
+};
+
+// Dispatch a composed offer. `payload` is
+//   { channels[], title, body, smsText?, whatsapp?: { template, languageCode, params[] },
+//     userIds?[], filters?{} }
+// Resolves to { attempted, capped, maxRecipients, sent: { <channel>: {ok,skipped,failed} } }.
+// Super-admin only server-side — a 403 here means the account lacks that role.
+export const sendSubscriptionOffer = async (payload) =>
+  admin('/subscriptions/send-offer', { method: 'POST', body: payload });

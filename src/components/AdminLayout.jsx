@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Building, Users, MessageSquare,
-  LogOut, Search, ChevronDown, Menu, X, Home, Flag, ShieldCheck,
+  LogOut, Search, ChevronDown, Menu, X, Home, Flag, ShieldCheck, CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import { toast } from 'sonner';
@@ -41,6 +41,7 @@ const AdminLayout = () => {
     { path: '/properties', icon: Building, label: 'Property Moderation' },
     { path: '/users', icon: Users, label: 'User Management' },
     { path: '/reports', icon: Flag, label: 'User Reports' },
+    { path: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
     { path: '/support', icon: MessageSquare, label: 'Support & AI' },
     // Admin team management is super-admin only.
     { path: '/team', icon: ShieldCheck, label: 'Admin Team', superAdmin: true },

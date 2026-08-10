@@ -11,6 +11,7 @@ import Overview from './pages/Overview.jsx';
 import PropertyModeration from './pages/PropertyModeration.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import Reports from './pages/Reports.jsx';
+import Subscriptions from './pages/Subscriptions.jsx';
 import SupportAndAI from './pages/SupportAndAI.jsx';
 import AdminTeam from './pages/AdminTeam.jsx';
 import AccountSettings from './pages/AccountSettings.jsx';
@@ -41,6 +42,7 @@ function App() {
             <Route path="properties" element={<PropertyModeration />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="subscriptions" element={<Subscriptions />} />
             <Route path="support" element={<SupportAndAI />} />
             <Route path="team" element={<AdminTeam />} />
             <Route path="account" element={<AccountSettings />} />
