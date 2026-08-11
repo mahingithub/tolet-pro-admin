@@ -9,10 +9,10 @@ const EMPTY_GUIDE = {
   title: '',
   suggestionText: '',
   videoUrl: '',
-  isActive: true,
   order: 0,
   placement: 'assistant',
   audience: 'all',
+  deviceCategory: 'all',
   keywords: '',
 };
 
@@ -176,6 +176,23 @@ const AIGuidesManager = () => {
               </p>
             </div>
             <div>
+              <label className="block text-xs font-black text-gray-700 uppercase tracking-widest mb-1.5">Device</label>
+              <select
+                value={currentGuide.deviceCategory || 'all'}
+                onChange={(e) => setCurrentGuide({ ...currentGuide, deviceCategory: e.target.value })}
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium focus:ring-2 focus:ring-[#ba0036]/20 outline-none"
+              >
+                <option value="all">Everyone (All Devices)</option>
+                <option value="mobile">Mobile only</option>
+                <option value="desktop">Desktop only</option>
+                <option value="tablet">Tablet only</option>
+                <option value="desktop_tablet">Desktop & Tablet both</option>
+              </select>
+              <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">
+                কোন ডিভাইসে ভিডিওটি দেখানো হবে সেটি নির্বাচন করুন।
+              </p>
+            </div>
+            <div>
               <label className="block text-xs font-black text-gray-700 uppercase tracking-widest mb-1.5">Sort Order</label>
               <input
                 type="number"
@@ -257,6 +274,9 @@ const AIGuidesManager = () => {
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${meta.cls}`}>{meta.label}</span>
                             {showAudience && (
                               <span className="text-[10px] font-bold text-gray-500 capitalize">{g.audience || 'all'}</span>
+                            )}
+                            {g.deviceCategory && g.deviceCategory !== 'all' && (
+                              <span className="text-[10px] font-bold text-blue-500 capitalize">{g.deviceCategory}</span>
                             )}
                           </div>
                         );
