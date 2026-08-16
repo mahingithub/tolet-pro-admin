@@ -7,7 +7,8 @@ import {
   fetchMe,
   updateMe as svcUpdateMe,
 } from '../services/adminAuthService.js';
-import { getAdmin, getToken, onSessionCleared } from '../services/session.js';
+import { getAdmin, getToken, clearSession, onSessionCleared } from '../services/session.js';
+import { isAdminSessionTerminated } from '../services/apiClient.js';
 
 /**
  * AdminAuthContext
@@ -31,16 +32,53 @@ export const AdminAuthProvider = ({ children }) => {
   // spinner instead of bouncing a valid session to /login on a hard refresh.
   const [booting, setBooting] = useState(() => !!getToken());
 
-  // On boot, validate the stored token against the server. If it's dead, the
-  // apiClient clears the session and we fall back to logged-out.
+  // On boot, validate the stored token against the server.
+  //
+  // This used to drop the admin to logged-out on ANY rejection, so a network
+  // blip or a single 5xx bounced a perfectly valid session to /login. The
+  // apiClient has already tried to refresh the access token by the time a
+  // rejection lands here, so the only thing that ends the session now is the
+  // server positively saying it is over.
   useEffect(() => {
     if (!getToken()) { setBooting(false); return undefined; }
+
     let cancelled = false;
-    fetchMe()
-      .then((admin) => { if (!cancelled) setUser(admin); })
-      .catch(() => { if (!cancelled) setUser(null); })
-      .finally(() => { if (!cancelled) setBooting(false); });
-    return () => { cancelled = true; };
+    let retryTimer = null;
+    let attempt = 0;
+
+    const validate = () => {
+      fetchMe()
+        .then((admin) => {
+          if (cancelled) return;
+          setUser(admin);
+          setBooting(false);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+
+          if (err?.status === 401 && isAdminSessionTerminated()) {
+            clearSession({ silent: true });
+            setUser(null);
+            setBooting(false);
+            return;
+          }
+
+          // Transient. Keep the cached admin on screen and retry with backoff.
+          setBooting(false);
+          attempt += 1;
+          if (attempt <= 5) {
+            const delay = Math.min(30_000, 2_000 * (2 ** (attempt - 1)));
+            retryTimer = window.setTimeout(validate, delay);
+          }
+        });
+    };
+
+    validate();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
   }, []);
 
   // If any API call nukes the session (e.g. a 401 mid-use), reflect it here so
