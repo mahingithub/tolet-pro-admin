@@ -17,10 +17,11 @@
 //     "skipped (opted out)" separately from "failed" so a small delivered
 //     count is never mistaken for a broken gateway.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CreditCard, Send, Search, RefreshCw, Smartphone, MessageCircle, Bell,
   Check, X, Crown, Sparkles, Users, AlertTriangle, Loader2,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listSubscriptions, sendSubscriptionOffer } from '../services/adminService';
@@ -34,7 +35,7 @@ const TIER_TABS = [
 ];
 
 const CHANNELS = [
-  { key: 'inapp', label: 'In-App Pop-up', icon: Bell, hint: 'Notification row + live socket toast. Always delivered.' },
+  { key: 'inapp', label: 'In-App Pop-up', icon: Bell, hint: 'Notification row + live toast if the user is online. No consent gate.' },
   { key: 'push', label: 'Push', icon: Smartphone, hint: 'FCM + web-push. Skips users who turned marketing push off.' },
   { key: 'sms', label: 'SMS', icon: MessageCircle, hint: 'Costs money per message. Skips users with SMS alerts off.' },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, hint: 'Approved template only. Skips users who never opted in.' },
@@ -96,9 +97,14 @@ export default function Subscriptions() {
   const { hasRole } = useAuth();
   const canSend = hasRole('super_admin');
 
+  const PAGE_SIZE = 50;
+
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
   const [total, setTotal] = useState(0);
+  // Banned users appear in the table but are excluded from a blast, so this —
+  // not `total` — is the number of people an offer will actually reach.
+  const [reachable, setReachable] = useState(0);
   const [loading, setLoading] = useState(false);
 
   // Filters — these define the blast audience, not just the table view.
@@ -107,6 +113,7 @@ export default function Subscriptions() {
   const [whatsapp, setWhatsapp] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [page, setPage] = useState(1);
 
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -115,28 +122,58 @@ export default function Subscriptions() {
     [tier, installed, whatsapp, search],
   );
 
+  // Monotonic request id. Filter changes fire overlapping requests and the
+  // responses can land out of order, which previously left the table (and the
+  // audience size handed to the blast modal) showing a stale filter's result.
+  // Only the newest request is allowed to write state.
+  const reqIdRef = useRef(0);
+
   const load = useCallback(async () => {
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     try {
-      const data = await listSubscriptions({ ...filters, limit: 100 });
+      const data = await listSubscriptions({ ...filters, page, limit: PAGE_SIZE });
+      if (reqId !== reqIdRef.current) return;
       setRows(data.rows || []);
       setCounts(data.counts || {});
       setTotal(data.total || 0);
+
+      // Clamp forward if the result set shrank underneath us (a Refresh after
+      // users were deleted, say). Without this, `page` can sit past the end:
+      // the table renders empty AND the pager hides itself because totalPages
+      // has dropped to 1, leaving no way back except changing a filter.
+      const maxPage = Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE));
+      if (page > maxPage) setPage(maxPage);
+      // Fall back to `total` if an older backend omits `reachable`, so the
+      // count degrades to the previous behaviour instead of showing 0.
+      setReachable(typeof data.reachable === 'number' ? data.reachable : (data.total || 0));
     } catch (err) {
+      if (reqId !== reqIdRef.current) return;
       toast.error(err.message || 'Failed to load subscriptions');
     } finally {
-      setLoading(false);
+      if (reqId === reqIdRef.current) setLoading(false);
     }
-  }, [filters]);
+  }, [filters, page]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Any filter change invalidates the current page — staying on page 4 of a
+  // narrower result set would show an empty table. Resetting inside the setter
+  // (rather than in a separate effect keyed on `filters`) keeps it to one fetch
+  // per change: React batches both updates into a single render.
+  const changeFilter = useCallback((setter, value) => {
+    setPage(1);
+    setter(value);
+  }, []);
+
   const onSearch = (e) => {
     e.preventDefault();
-    setSearch(searchInput.trim());
+    changeFilter(setSearch, searchInput.trim());
   };
 
   const filtersActive = Boolean(tier || installed || whatsapp || search);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const bannedInFilter = Math.max(0, total - reachable);
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -163,12 +200,14 @@ export default function Subscriptions() {
           </button>
           <button
             onClick={() => setModalOpen(true)}
-            disabled={!canSend || total === 0}
+            disabled={!canSend || reachable === 0}
             title={
               !canSend
                 ? 'Only a super admin can send offers'
-                : total === 0
-                  ? 'No users match the current filter'
+                : reachable === 0
+                  ? total > 0
+                    ? 'Every user matching this filter is banned — banned accounts never receive offers'
+                    : 'No users match the current filter'
                   : 'Compose a special offer'
             }
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#ba0036] text-white text-sm font-bold hover:bg-[#a10030] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -195,7 +234,7 @@ export default function Subscriptions() {
             {TIER_TABS.map((t) => (
               <button
                 key={t.key || 'all'}
-                onClick={() => setTier(t.key)}
+                onClick={() => changeFilter(setTier, t.key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                   tier === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
                 }`}
@@ -207,7 +246,7 @@ export default function Subscriptions() {
 
           <select
             value={installed}
-            onChange={(e) => setInstalled(e.target.value)}
+            onChange={(e) => changeFilter(setInstalled, e.target.value)}
             className="px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 bg-white outline-none focus:border-gray-400"
           >
             <option value="">App: any</option>
@@ -217,7 +256,7 @@ export default function Subscriptions() {
 
           <select
             value={whatsapp}
-            onChange={(e) => setWhatsapp(e.target.value)}
+            onChange={(e) => changeFilter(setWhatsapp, e.target.value)}
             className="px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 bg-white outline-none focus:border-gray-400"
           >
             <option value="">WhatsApp: any</option>
@@ -238,6 +277,7 @@ export default function Subscriptions() {
           {filtersActive && (
             <button
               onClick={() => {
+                setPage(1);
                 setTier(''); setInstalled(''); setWhatsapp('');
                 setSearch(''); setSearchInput('');
               }}
@@ -250,7 +290,12 @@ export default function Subscriptions() {
 
         <p className="text-[11px] font-bold text-gray-400 mt-3">
           {loading ? 'Loading…' : `${total} user${total === 1 ? '' : 's'} match this filter`}
-          {filtersActive && ' — an offer sent now targets exactly this set.'}
+          {!loading && filtersActive && ' — an offer sent now targets exactly this set.'}
+          {!loading && bannedInFilter > 0 && (
+            <span className="text-amber-600">
+              {` ${bannedInFilter} banned account${bannedInFilter === 1 ? ' is' : 's are'} excluded, so an offer reaches ${reachable}.`}
+            </span>
+          )}
         </p>
       </div>
 
@@ -335,19 +380,51 @@ export default function Subscriptions() {
           </table>
         </div>
 
-        {rows.length > 0 && rows.length < total && (
-          <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+        {/* The table pages; the blast does not. An offer always targets the whole
+            filter, so paging is purely for reviewing the audience. Previously
+            the request hardcoded limit:100 and never sent `page`, which made
+            every user past the 100th unreachable in the UI. */}
+        {total > 0 && (
+          <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-3 flex-wrap">
             <p className="text-[11px] font-bold text-gray-400">
-              Showing the first {rows.length} of {total}. Narrow the filters to see the rest — an
-              offer still reaches all {total}.
+              {/* Guarded on rows.length so an in-flight clamp can never render a
+                  backwards range like "101–100 of 40". */}
+              {rows.length > 0
+                ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${(page - 1) * PAGE_SIZE + rows.length} of ${total}`
+                : `${total} match this filter`}
+              {' — an offer still reaches all '}{reachable}{' reachable user(s).'}
             </p>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || loading}
+                  aria-label="Previous page"
+                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <span className="text-[11px] font-bold text-gray-500 px-1.5">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages || loading}
+                  aria-label="Next page"
+                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {modalOpen && (
         <OfferModal
-          audienceSize={total}
+          audienceSize={reachable}
           filters={filters}
           onClose={() => setModalOpen(false)}
         />
@@ -405,7 +482,12 @@ function OfferModal({ audienceSize, filters, onClose }) {
       }
       const res = await sendSubscriptionOffer(payload);
       setResult(res);
-      toast.success(`Offer dispatched to ${res.attempted} user(s)`);
+      // `attempted` is how many users were processed, not how many were
+      // reached — reporting it as a success made a fully undelivered blast
+      // (unconfigured gateway, nobody opted in) look like it worked.
+      const delivered = Object.values(res.sent || {}).some((s) => s.ok > 0);
+      if (delivered) toast.success(`Offer dispatched to ${res.attempted} user(s)`);
+      else toast.warning('Processed, but nothing was delivered — see the breakdown.');
     } catch (err) {
       toast.error(err.message || 'Failed to send offer');
     } finally {
@@ -589,19 +671,68 @@ function OfferModal({ audienceSize, filters, onClose }) {
   );
 }
 
+// Human-readable causes for the skipped/failed buckets. The backend reports raw
+// reason codes so it stays UI-agnostic; the mapping lives here.
+const REASON_LABEL = {
+  opted_out: 'opted out of this channel',
+  not_opted_in: 'never opted in',
+  no_phone: 'no phone number on file',
+  no_device: 'no registered device',
+  not_configured: 'channel not configured on the server',
+  invalid_recipient: 'invalid phone number',
+  push_rejected: 'rejected by the push gateway',
+  push_error: 'push service error',
+  push_failed: 'push transport error',
+  emit_failed: 'could not be saved',
+  whatsapp_failed: 'rejected by WhatsApp',
+  sms_rejected: 'rejected by the SMS gateway (check balance and sender ID)',
+  sms_failed: 'SMS send failed',
+};
+
+const describeReasons = (reasons = {}) =>
+  Object.entries(reasons)
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, n]) => `${n} ${REASON_LABEL[code] || code}`)
+    .join(', ');
+
 // Per-channel delivery breakdown. "Skipped" is kept visually distinct from
 // "failed" — the first is consent working as intended, the second is a
 // gateway problem worth investigating.
 function ResultPanel({ result, onClose }) {
   const entries = Object.entries(result.sent || {});
+  // A channel whose gateway is unset reports every recipient as skipped, which
+  // otherwise reads as "they all opted out". Call it out explicitly.
+  const misconfigured = entries.filter(([, s]) => s.configError).map(([ch]) => ch);
+  const deliveredAny = entries.some(([, s]) => s.ok > 0);
+
   return (
     <div className="p-6 space-y-4">
       <div className="text-center py-2">
-        <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2">
-          <Check size={24} strokeWidth={3} />
+        <div
+          className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-2 ${
+            deliveredAny ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+          }`}
+        >
+          {deliveredAny ? <Check size={24} strokeWidth={3} /> : <AlertTriangle size={22} strokeWidth={2.5} />}
         </div>
-        <p className="text-sm font-black text-gray-900">Dispatched to {result.attempted} user(s)</p>
+        <p className="text-sm font-black text-gray-900">
+          {deliveredAny
+            ? `Dispatched to ${result.attempted} user(s)`
+            : `Processed ${result.attempted} user(s) — nothing was delivered`}
+        </p>
       </div>
+
+      {misconfigured.length > 0 && (
+        <p className="text-[11px] font-bold text-red-700 bg-red-50 border border-red-100 rounded-xl p-3 flex items-start gap-1.5">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span>
+            Server-side channel problem:{' '}
+            <span className="capitalize">{misconfigured.join(', ')}</span>. These recipients were
+            not reached because of a missing credential or a rejected gateway account (check the
+            reason under each channel), not because they opted out — re-send once it is resolved.
+          </span>
+        </p>
+      )}
 
       {result.capped && (
         <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-1.5">
@@ -612,21 +743,33 @@ function ResultPanel({ result, onClose }) {
       )}
 
       <div className="space-y-2">
-        {entries.map(([channel, s]) => (
-          <div key={channel} className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-gray-50/60">
-            <p className="text-[13px] font-black text-gray-700 capitalize">{channel}</p>
-            <div className="flex items-center gap-3 text-[11px] font-bold">
-              <span className="text-emerald-600">{s.ok} sent</span>
-              <span className="text-gray-400">{s.skipped} skipped</span>
-              <span className={s.failed ? 'text-red-600' : 'text-gray-300'}>{s.failed} failed</span>
+        {entries.map(([channel, s]) => {
+          const why = describeReasons(s.reasons);
+          return (
+            <div key={channel} className="p-3 rounded-xl border border-gray-100 bg-gray-50/60">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[13px] font-black text-gray-700 capitalize">{channel}</p>
+                <div className="flex items-center gap-3 text-[11px] font-bold">
+                  <span className={s.ok ? 'text-emerald-600' : 'text-gray-300'}>{s.ok} sent</span>
+                  <span className="text-gray-400">{s.skipped} skipped</span>
+                  <span className={s.failed ? 'text-red-600' : 'text-gray-300'}>{s.failed} failed</span>
+                </div>
+              </div>
+              {/* The aggregate counts alone can't distinguish consent from a
+                  broken gateway, which is the whole question an admin has when
+                  a blast under-delivers. */}
+              {why && (
+                <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">{why}</p>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <p className="text-[10px] font-bold text-gray-400 leading-snug">
-        &quot;Skipped&quot; means the user opted out of that channel or has no phone number on file —
-        expected, not an error. &quot;Failed&quot; means the gateway rejected the message.
+        &quot;Skipped&quot; usually means the user opted out of that channel, has no phone number on
+        file, or has no registered device — expected, not an error. &quot;Failed&quot; means the
+        gateway rejected the message. The reason line under each channel says which.
       </p>
 
       <button
