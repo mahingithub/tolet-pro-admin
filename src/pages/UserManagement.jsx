@@ -48,21 +48,62 @@ const StatusChip = ({ status }) => {
   );
 };
 
+// ─── Document tile ──────────────────────────────────────────────────
+// Three states, and the labels are always present so a reviewer can tell WHICH
+// document is missing or broken:
+//
+//   no url    → "Not uploaded" placeholder
+//   loaded    → thumbnail + hover "Open"
+//   failed    → explicit "Preview failed" tile that still links out
+//
+// The failure state used to be `onError = opacity 0.3`, which left a grey box
+// wearing a working "Open" button. That's indistinguishable from a dark image
+// and gave no hint that anything was wrong — it's how the broken Profile Photo
+// tile went unnoticed.
 const DocPreview = ({ url, label }) => {
+  const [failed, setFailed] = useState(false);
+
+  // A new url means a new attempt — clear a stale failure.
+  useEffect(() => { setFailed(false); }, [url]);
+
   if (!url) {
     return (
-      <div className="aspect-[4/3] rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center text-gray-300">
-        <FileImage size={28} />
+      <div>
+        <div className="aspect-[4/3] rounded-xl bg-gray-50 border border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 text-gray-300">
+          <FileImage size={26} />
+          <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">Not uploaded</span>
+        </div>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">{label}</p>
       </div>
     );
   }
+
+  if (failed) {
+    return (
+      <div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="aspect-[4/3] rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center gap-1.5 px-2 text-center hover:bg-amber-100 transition-colors"
+          title={url}
+        >
+          <AlertTriangle size={22} className="text-amber-500" />
+          <span className="text-[9px] font-black uppercase tracking-widest text-amber-700">Preview failed</span>
+          <span className="text-[9px] font-bold text-amber-600/80 underline">Open directly</span>
+        </a>
+        <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mt-1.5">{label}</p>
+      </div>
+    );
+  }
+
   return (
     <a href={url} target="_blank" rel="noreferrer" className="block group relative">
       <img
         src={url}
         alt={label}
         className="aspect-[4/3] w-full object-cover rounded-xl shadow-[0_4px_15px_rgba(0,0,0,0.04)] group-hover:shadow-[0_8px_25px_rgba(0,0,0,0.08)] transition-shadow"
-        onError={(e) => { e.currentTarget.style.opacity = 0.3; }}
+        onError={() => setFailed(true)}
       />
       <span className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
         <span className="bg-white/95 text-gray-900 text-[10px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1">
@@ -115,7 +156,12 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
   const [showReject, setShowReject] = useState(false);
   const [reason, setReason] = useState('');
 
-  const docCount = [v.photoUrl, v.nidFrontUrl, v.nidBackUrl, v.professionProofUrl].filter(Boolean).length;
+  // 3, not 4 — there are only three real document slots. The old "/4" counted a
+  // professionProofUrl field that no upload path can ever populate, so a
+  // complete submission still displayed as "3/4 docs".
+  const DOC_SLOTS = [v.photoUrl, v.nidFrontUrl, v.nidBackUrl];
+  const docCount = DOC_SLOTS.filter(Boolean).length;
+  const docTotal = DOC_SLOTS.length;
   const memberSince = user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   }) : '—';
@@ -137,7 +183,7 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
           <h3 className="text-lg font-black text-gray-900 truncate">{user.name}</h3>
           <p className="text-xs font-bold text-gray-500">{user.phone} {user.email ? `• ${user.email}` : ''}</p>
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-0.5">
-            Joined {memberSince} · {docCount}/4 docs
+            Joined {memberSince} · {docCount}/{docTotal} docs
           </p>
         </div>
         <StatusChip status={v.status || 'pending'} />
@@ -218,11 +264,16 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
           <h4 className="text-[10px] font-black uppercase tracking-widest text-[#ba0036] mb-4">
             Identity Documents
           </h4>
+          {/* Three documents, matching DOC_KINDS in the backend's
+              verification.controller.js. A fourth "Profession Proof" tile used
+              to sit here reading v.professionProofUrl — a field that exists in
+              no schema, no upload slot and no route, so it always rendered as
+              an unlabelled empty placeholder and made every submission look
+              incomplete. */}
           <div className="grid grid-cols-2 gap-3">
-            <DocPreview url={v.photoUrl}           label="Profile Photo" />
-            <DocPreview url={v.professionProofUrl} label="Profession Proof" />
-            <DocPreview url={v.nidFrontUrl}        label="NID Front" />
-            <DocPreview url={v.nidBackUrl}         label="NID Back" />
+            <DocPreview url={v.photoUrl}    label="Profile Photo" />
+            <DocPreview url={v.nidFrontUrl} label="NID Front" />
+            <DocPreview url={v.nidBackUrl}  label="NID Back" />
           </div>
 
           <h4 className="text-[10px] font-black uppercase tracking-widest text-[#ba0036] mt-5 mb-3">
@@ -232,7 +283,6 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
             <li className="flex items-start gap-2"><span className="text-[#ba0036] mt-0.5">▸</span> Name on NID matches "{user.name}"</li>
             <li className="flex items-start gap-2"><span className="text-[#ba0036] mt-0.5">▸</span> NID images are sharp + readable</li>
             <li className="flex items-start gap-2"><span className="text-[#ba0036] mt-0.5">▸</span> Profile photo shows a real face, not a logo</li>
-            <li className="flex items-start gap-2"><span className="text-[#ba0036] mt-0.5">▸</span> Profession proof looks legitimate</li>
             <li className="flex items-start gap-2"><span className="text-[#ba0036] mt-0.5">▸</span> Workplace + emergency contact look genuine</li>
           </ul>
         </div>
@@ -455,13 +505,12 @@ const LandlordPendingCard = ({ user, busyId, onApprove, onReject }) => {
             Submitted Documents
           </h4>
           <div className="grid grid-cols-2 gap-3">
-            <DocPreview url={lv.utilityBillUrl}    label="Utility Bill" />
+            <DocPreview url={lv.utilityBillUrl} label="Utility Bill" />
             {!tenantAlreadyVerified && (
               <>
-                <DocPreview url={tv.photoUrl}           label="Profile Photo" />
-                <DocPreview url={tv.nidFrontUrl}        label="NID Front" />
-                <DocPreview url={tv.nidBackUrl}         label="NID Back" />
-                <DocPreview url={tv.professionProofUrl} label="Profession Proof" />
+                <DocPreview url={tv.photoUrl}    label="Profile Photo" />
+                <DocPreview url={tv.nidFrontUrl} label="NID Front" />
+                <DocPreview url={tv.nidBackUrl}  label="NID Back" />
               </>
             )}
           </div>
