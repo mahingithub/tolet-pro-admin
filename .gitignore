@@ -23,3 +23,10 @@ yarn-error.log*
 
 # Editor swap files
 *.swp
+.env
+.env.*
+*.keystore
+*.jks
+*.p12
+*.p8
+*.pem
