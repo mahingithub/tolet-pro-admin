@@ -1,0 +1,11 @@
+# robots.txt — TO-LET PRO Admin Console
+# ─────────────────────────────────────────────────────────────────────────────
+# The admin panel is a separate app on its own subdomain. Nothing here should
+# ever appear in a search result. index.html already sends
+# `<meta name="robots" content="noindex, nofollow">`, but that only helps a
+# crawler that fetched and rendered the page — this stops the fetch, and stops
+# the subdomain from showing up as a URL-only result the way disallowed-but-
+# linked pages sometimes do.
+
+User-agent: *
+Disallow: /
