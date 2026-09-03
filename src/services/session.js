@@ -13,6 +13,9 @@
 
 const KEY_TOKEN = 'toletpro_admin:token';
 const KEY_ADMIN = 'toletpro_admin:admin';
+// Why the last session ended, survived across the bounce to /login so the login
+// screen can explain itself instead of silently appearing mid-action.
+const KEY_ENDED = 'toletpro_admin:ended-reason';
 const EVT_CLEARED = 'toletpro-admin:session-cleared';
 
 export const getToken = () => {
@@ -40,20 +43,47 @@ export function setSession({ token, admin } = {}) {
 
 /**
  * Wipe the admin session. By default this emits a `session-cleared` event so
- * the auth context can react (e.g. a 401 mid-session bounces to /login).
- * Pass { silent: true } on an explicit logout where the caller updates state
- * itself and doesn't want the event to double-fire.
+ * the auth context can react (e.g. a revoked role mid-session bounces the admin
+ * to /login). Pass { silent: true } on an explicit logout where the caller
+ * updates state itself and doesn't want the event to double-fire.
+ *
+ * `reason` is one of the codes LoginPage knows how to explain
+ * ('access_revoked' | 'account_banned' | 'session_expired'). Omit it for a
+ * deliberate sign-out — there is nothing to explain.
  */
-export function clearSession({ silent = false } = {}) {
+export function clearSession({ silent = false, reason = '' } = {}) {
   try {
     window.localStorage.removeItem(KEY_TOKEN);
     window.localStorage.removeItem(KEY_ADMIN);
+    if (reason) window.localStorage.setItem(KEY_ENDED, reason);
+    else window.localStorage.removeItem(KEY_ENDED);
   } catch {
     /* ignore */
   }
   if (!silent) {
-    try { window.dispatchEvent(new CustomEvent(EVT_CLEARED)); } catch { /* ignore */ }
+    try {
+      window.dispatchEvent(new CustomEvent(EVT_CLEARED, { detail: { reason } }));
+    } catch { /* ignore */ }
   }
+}
+
+/**
+ * Read why the last session ended. Non-destructive on purpose: LoginPage reads
+ * this from a useState initializer, and StrictMode invokes those twice in dev —
+ * a read-and-delete would hand the second call an empty string and swallow the
+ * message. Call clearSessionEndedReason() from an effect to consume it.
+ */
+export function getSessionEndedReason() {
+  try {
+    return window.localStorage.getItem(KEY_ENDED) || '';
+  } catch {
+    return '';
+  }
+}
+
+/** Forget the reason, so it is shown exactly once. Idempotent. */
+export function clearSessionEndedReason() {
+  try { window.localStorage.removeItem(KEY_ENDED); } catch { /* ignore */ }
 }
 
 export const onSessionCleared = (handler) => {

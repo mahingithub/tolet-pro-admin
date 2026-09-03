@@ -343,11 +343,27 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
   );
 };
 
+// Super admin via EITHER field. `roles[]` is the source of truth and `role` is
+// the legacy fallback, so checking only one of them is how a super admin ends up
+// rendering with an enabled Ban / Delete / role control.
+const isSuperAdminUser = (u) =>
+  u?.role === 'super_admin' || (u?.roles || []).includes('super_admin');
+
 // ─── User directory row ─────────────────────────────────────────────
 const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) => {
   const status = user.tenantProfile?.verification?.status || 'unverified';
   const busy   = busyId === user.id;
-  const isSuperAdmin = currentUser?.role === 'super_admin' || currentUser?.roles?.includes('super_admin');
+  const isSuperAdmin = isSuperAdminUser(currentUser);
+
+  // Mirrors the server's rails: super admins can't be banned, deleted or
+  // demoted here, and you can't act on your own account. The backend enforces
+  // all of this independently — this just avoids offering a click that 4xxs.
+  // Naming matches AdminTeam's AdminRow, which gates the same way.
+  const isSelf     = String(user.id) === String(currentUser?.id);
+  const locked     = isSuperAdminUser(user) || isSelf;
+  const lockReason = isSelf
+    ? "You can't act on your own account"
+    : 'Super admins are protected';
 
   return (
     <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all flex items-center gap-4">
@@ -393,8 +409,8 @@ const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) =>
         ) : (
           <button
             onClick={() => onBan(user.id)}
-            disabled={busy || user.role === 'super_admin'}
-            title={user.role === 'super_admin' ? "Super admins can't be banned" : ''}
+            disabled={busy || locked}
+            title={locked ? lockReason : ''}
             className="px-4 py-2 bg-white border border-gray-200 hover:border-[#ba0036] text-gray-600 hover:text-[#ba0036] rounded-lg font-black text-xs transition-all disabled:opacity-30 flex items-center gap-1.5"
           >
             {busy ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
@@ -403,8 +419,8 @@ const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) =>
         )}
         <button
           onClick={() => onBan(user.id, true)}
-          disabled={busy || user.role === 'super_admin'}
-          title={user.role === 'super_admin' ? "Super admins can't be deleted" : 'Permanently Delete User'}
+          disabled={busy || locked}
+          title={locked ? lockReason : 'Permanently Delete User'}
           className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-black text-xs transition-all disabled:opacity-30 flex items-center gap-1.5 ml-2"
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
@@ -414,8 +430,8 @@ const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) =>
           <select
             value={user.role || 'tenant'}
             onChange={(e) => onChangeRole(user.id, e.target.value)}
-            disabled={busy || user.role === 'super_admin'}
-            title={user.role === 'super_admin' ? "Cannot change role of a super admin" : "Change User Role"}
+            disabled={busy || locked}
+            title={locked ? lockReason : 'Change User Role'}
             className="ml-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:border-[#ba0036] transition-all disabled:opacity-50 cursor-pointer"
           >
             <option value="tenant">Tenant</option>
@@ -663,6 +679,13 @@ const UserManagement = () => {
     }
   };
 
+  // The server's role rails, in English. Same codes the Admin Team page maps.
+  const ROLE_ERRORS = {
+    last_super_admin: "You can't demote the last super admin — promote someone else first.",
+    cannot_modify_self: "You can't change your own role.",
+    super_admin_required: 'Only super admins can change user roles.',
+  };
+
   const handleChangeRole = async (id, newRole) => {
     setBusyId(id);
     try {
@@ -670,7 +693,7 @@ const UserManagement = () => {
       setAllUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
       showToast(`User role updated to ${newRole}.`);
     } catch (err) {
-      showToast(err?.message || 'Failed to update role.', 'error');
+      showToast(ROLE_ERRORS[err?.code] || err?.message || 'Failed to update role.', 'error');
     } finally {
       setBusyId(null);
     }

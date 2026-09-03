@@ -4,10 +4,22 @@ import {
   Home, Phone, Lock, Loader2, ShieldCheck, AlertCircle, Eye, EyeOff, ArrowRight, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
+import { getSessionEndedReason, clearSessionEndedReason } from '../services/session.js';
 
 /** Strip the leading 0 a BD number often has (01742… → 1742…) + non-digits. */
 const normalizePhone = (raw) => raw.replace(/\D/g, '').replace(/^0+/, '');
 const toE164 = (local) => `+880${local}`;
+
+/**
+ * Why the previous session ended. Being dropped here mid-action with no
+ * explanation is the worst part of an involuntary sign-out, and "your access
+ * was revoked" is a very different message from "you were signed out".
+ */
+const ENDED_REASONS = {
+  access_revoked: 'Your admin access was removed. Contact a super admin if you think this is a mistake.',
+  account_banned: 'Your account has been suspended, so the console signed you out.',
+  session_expired: 'Your session expired. Please sign in again.',
+};
 
 /**
  * Dedicated admin login — phone + password, with optional 2FA step.
@@ -30,6 +42,10 @@ const LoginPage = () => {
   const [tempToken, setTempToken] = useState('');
   const [otpCode, setOtpCode] = useState('');
 
+  // Shown once: read here, consumed by the effect below, dropped on first retry.
+  const [endedNotice, setEndedNotice] = useState(() => ENDED_REASONS[getSessionEndedReason()] || '');
+  useEffect(() => { clearSessionEndedReason(); }, []);
+
   const nextUrl = searchParams.get('next');
 
   const goNext = () => {
@@ -50,6 +66,7 @@ const LoginPage = () => {
     if (isLoading) return;
     setIsLoading(true);
     setError('');
+    setEndedNotice('');
     try {
       const result = await login({ phone: toE164(phone), password });
       
@@ -164,6 +181,12 @@ const LoginPage = () => {
                 <h2 className="text-2xl font-black tracking-tight">Sign in</h2>
                 <p className="text-sm text-white/50 mt-1">Access the administration console.</p>
               </div>
+
+              {endedNotice && !error && (
+                <div className="mb-5 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm font-semibold text-amber-200 flex items-start gap-2" role="status">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" /> {endedNotice}
+                </div>
+              )}
 
               {error && (
                 <div className="mb-5 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm font-semibold text-red-300 flex items-start gap-2" role="alert">

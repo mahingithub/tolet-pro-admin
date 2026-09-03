@@ -8,24 +8,27 @@
  *   - normalises errors to `{ message, code, status, serverMessage }`
  *   - on a 401, refreshes the admin access token once and replays the request
  *
- * It deliberately does NOT clear the session. Three separate bugs here used to
- * make a single 401 an instant logout:
+ * It ends the session ONLY when the server has positively said the session is
+ * over. Three separate bugs here used to make a single 401 an instant logout:
  *
  *   1. The refresh POST went to `/auth/admin/refresh`, but the admin surface is
  *      mounted at `/api/admin/auth` — and no refresh route existed at all. So
  *      the request could never succeed.
- *   2. The failure branch called clearSession(), which fires `session-cleared`,
- *      which drops the admin straight to /login. Any hiccup ended the session.
+ *   2. The failure branch called clearSession() on ANY 401, so any hiccup ended
+ *      the session.
  *   3. Subscribers were registered AFTER the refresh had already flushed them,
  *      so concurrent 401s produced promises that never settled and screens hung
  *      on their spinners forever.
  *
- * Now: the refresh hits the real endpoint, single-flighting is done with a
- * shared promise (which cannot deadlock), and ending the session is
- * AdminAuthContext's decision, made only when the server says it is over.
+ * The over-correction for (2) was to never clear the session here at all, which
+ * left the console with NO way to notice a session that had genuinely ended
+ * mid-use: a revoked or banned admin kept the shell and their cached identity
+ * until they happened to reload. `clearSession()` is called again now, but only
+ * for the narrow terminal set below — never for a 401 that a refresh can fix,
+ * and never for a 429/5xx/dropped connection.
  */
 
-import { getToken, setSession } from './session.js';
+import { getToken, setSession, clearSession } from './session.js';
 
 export const API_BASE = (
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
@@ -53,6 +56,36 @@ const TERMINAL_REFRESH_CODES = new Set([
   'account_banned',
   'admin_required',
 ]);
+
+/**
+ * 403 codes that mean this account no longer has admin access AT ALL — the role
+ * was revoked, or the account was banned, while the console was open.
+ *
+ * These never reach the refresh path (a 403 is not a 401), so before this set
+ * existed nothing in the client noticed them: requireAdminAuth returned 403 on
+ * every request, AdminAuthContext treated it as a transient error, and the
+ * revoked admin kept a working-looking console full of error banners.
+ *
+ * Deliberately NARROW. `super_admin_required` is NOT here — a moderator hitting
+ * a super-admin-only endpoint is a legitimate 403 for a perfectly valid session.
+ */
+const TERMINAL_ACCESS_CODES = new Set([
+  'admin_required',
+  'account_banned',
+]);
+
+/**
+ * End the admin session, once. clearSession() fires `session-cleared`, which
+ * AdminAuthContext listens for in order to drop the user to /login.
+ *
+ * The getToken() guard makes this idempotent: when a screen fires several
+ * requests in parallel they all come back 403 together, and without it each one
+ * would dispatch its own event.
+ */
+function endSession(reason) {
+  if (!getToken()) return;
+  clearSession({ reason });
+}
 
 /** null when the last refresh succeeded; otherwise details about the failure. */
 let lastRefreshOutcome = null;
@@ -174,8 +207,21 @@ export async function apiFetch(path, options = {}) {
     if (!refreshErr) {
       return apiFetch(path, { ...options, _isRetry: true });
     }
-    // Refresh failed. Surface the ORIGINAL 401 and let AdminAuthContext decide
-    // whether that ends the session (it checks isAdminSessionTerminated()).
+    // Refresh failed. If the server said the session is genuinely over, end it
+    // here so ANY call can trigger the bounce to /login — not just the /me
+    // probe AdminAuthContext runs on boot. Otherwise leave it alone: a 429, a
+    // 5xx or a dropped connection says nothing about the session.
+    if (isAdminSessionTerminated()) {
+      endSession('session_expired');
+    }
+  }
+
+  // ─── 403: the account lost admin access while the console was open ────────
+  // Only meaningful on an authenticated call — the login endpoint answers 403
+  // `admin_required` for a non-admin's credentials, and there is no session to
+  // end in that case.
+  if (res.status === 403 && auth && TERMINAL_ACCESS_CODES.has(data.code)) {
+    endSession(data.code === 'account_banned' ? 'account_banned' : 'access_revoked');
   }
 
   throw toError(res.status, data);

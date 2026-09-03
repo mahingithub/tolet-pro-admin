@@ -47,6 +47,11 @@ export const AdminAuthProvider = ({ children }) => {
     let attempt = 0;
 
     const validate = () => {
+      // apiClient may have ended the session out from under us (a terminal 403
+      // on a parallel request). Without this the backoff loop would keep
+      // probing /me with no token, logging 401s that mean nothing.
+      if (!getToken()) { setBooting(false); return; }
+
       fetchMe()
         .then((admin) => {
           if (cancelled) return;
@@ -57,7 +62,16 @@ export const AdminAuthProvider = ({ children }) => {
           if (cancelled) return;
 
           if (err?.status === 401 && isAdminSessionTerminated()) {
-            clearSession({ silent: true });
+            clearSession({ silent: true, reason: 'session_expired' });
+            setUser(null);
+            setBooting(false);
+            return;
+          }
+
+          // A 403 here means the account still authenticates but has lost admin
+          // access. apiClient has already cleared the session, so just reflect
+          // it — no retry, the answer will not change.
+          if (err?.status === 403) {
             setUser(null);
             setBooting(false);
             return;
@@ -81,9 +95,19 @@ export const AdminAuthProvider = ({ children }) => {
     };
   }, []);
 
-  // If any API call nukes the session (e.g. a 401 mid-use), reflect it here so
-  // the guard redirects to /login.
-  useEffect(() => onSessionCleared(() => setUser(null)), []);
+  // If any API call ends the session (role revoked, account banned, or a 401
+  // whose refresh came back terminal), reflect it here so RequireAdmin
+  // redirects to /login.
+  //
+  // This listener existed before but was dead: clearSession() was only ever
+  // called with { silent: true }, so the event it keys on was never dispatched
+  // and a revoked admin kept the console until they reloaded. apiClient fires
+  // it now. `booting` is cleared too — otherwise a session that dies during the
+  // boot probe leaves the guard spinning forever.
+  useEffect(() => onSessionCleared(() => {
+    setUser(null);
+    setBooting(false);
+  }), []);
 
   const value = useMemo(() => {
     const roles = Array.isArray(user?.roles) && user.roles.length
