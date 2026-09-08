@@ -2,10 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AdminAuthContext';
 import {
-  Users, Search, ShieldCheck, ShieldAlert, ShieldX, CheckCircle2,
+  Users, ShieldCheck, ShieldX, CheckCircle2,
   XCircle, AlertTriangle, Ban, RotateCcw, FileImage, Eye, Clock,
-  RefreshCw, BadgeCheck, Loader2, Trash2
+  RefreshCw, BadgeCheck, Trash2, ShieldAlert,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   listUsers,
   listPendingVerification,
@@ -19,6 +20,10 @@ import {
   deleteAdminUser,
   updateUserRole,
 } from '../services/adminService';
+import {
+  PageContainer, PageHeader, Card, Tabs, Badge, Button, Select, SearchInput,
+  LoadingState, EmptyState,
+} from '../components/ui';
 
 /**
  * UserManagement — KYC queues (tenant + landlord) and the searchable user
@@ -26,26 +31,39 @@ import {
  */
 
 const TABS = [
-  { id: 'pending',          label: 'Tenant Verification' },
-  { id: 'pending-landlord', label: 'Landlord Verification' },
-  { id: 'all',              label: 'All Users' },
+  { value: 'pending',          label: 'Tenant Verification' },
+  { value: 'pending-landlord', label: 'Landlord Verification' },
+  { value: 'all',              label: 'All Users' },
+];
+
+// The role a super admin can assign from the directory row.
+const ROLE_OPTIONS = [
+  { value: 'tenant',        label: 'Tenant' },
+  { value: 'landlord',      label: 'Landlord' },
+  { value: 'support_agent', label: 'Support Agent' },
+  { value: 'moderator',     label: 'Moderator' },
+  { value: 'super_admin',   label: 'Super Admin' },
+];
+
+// Role filter pills on the All Users tab.
+const ROLE_FILTERS = [
+  { value: '',           label: 'All' },
+  { value: 'tenant',     label: 'Tenant' },
+  { value: 'landlord',   label: 'Landlord' },
+  { value: 'super_admin', label: 'Super Admin' },
 ];
 
 // ─── Small UI atoms ─────────────────────────────────────────────────
+// Verification status, in the console's shared status vocabulary.
 const StatusChip = ({ status }) => {
   const map = {
-    verified:   { bg: 'bg-blue-50',    text: 'text-blue-700',    icon: BadgeCheck,   label: 'Verified' },
-    pending:    { bg: 'bg-amber-50',   text: 'text-amber-700',   icon: Clock,        label: 'Pending' },
-    rejected:   { bg: 'bg-red-50',     text: 'text-[#ba0036]',   icon: ShieldX,      label: 'Rejected' },
-    unverified: { bg: 'bg-gray-100',   text: 'text-gray-500',    icon: ShieldAlert,  label: 'Unverified' },
+    verified:   { tone: 'info',    icon: BadgeCheck,  label: 'Verified' },
+    pending:    { tone: 'warning', icon: Clock,       label: 'Pending' },
+    rejected:   { tone: 'brand',   icon: ShieldX,     label: 'Rejected' },
+    unverified: { tone: 'neutral', icon: ShieldAlert, label: 'Unverified' },
   };
   const s = map[status] || map.unverified;
-  const Icon = s.icon;
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${s.bg} ${s.text}`}>
-      <Icon size={11} />{s.label}
-    </span>
-  );
+  return <Badge tone={s.tone} icon={s.icon}>{s.label}</Badge>;
 };
 
 // ─── Document tile ──────────────────────────────────────────────────
@@ -169,7 +187,7 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
   const hasLandlordData = !!(lp.fullName || lp.city || lp.address || (lp.preferredTenants || []).length);
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all">
+    <Card padding="lg" hover>
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
@@ -303,43 +321,46 @@ const PendingCard = ({ user, busyId, onApprove, onReject }) => {
       <div className="flex flex-col sm:flex-row gap-3">
         {showReject ? (
           <>
-            <button
-              onClick={() => { setShowReject(false); setReason(''); }}
+            <Button
+              size="lg"
+              variant="ghost"
+              fullWidth
               disabled={busy}
-              className="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all disabled:opacity-50"
+              onClick={() => { setShowReject(false); setReason(''); }}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              size="lg"
+              variant="primary"
+              icon={XCircle}
+              fullWidth
+              loading={busy}
+              disabled={!reason.trim()}
               onClick={() => onReject(user.id, reason.trim())}
-              disabled={busy || !reason.trim()}
-              className="flex-1 px-6 py-2.5 bg-[#ba0036] hover:bg-[#90002a] text-white rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
               Send Rejection
-            </button>
+            </Button>
           </>
         ) : (
           <>
-            <button
-              onClick={() => setShowReject(true)}
-              disabled={busy}
-              className="flex-1 px-6 py-3 bg-white border border-gray-200 hover:border-[#ba0036] text-gray-700 hover:text-[#ba0036] rounded-xl font-black text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <XCircle size={16} /> Reject
-            </button>
-            <button
+            <Button size="lg" icon={XCircle} fullWidth disabled={busy} onClick={() => setShowReject(true)}>
+              Reject
+            </Button>
+            <Button
+              size="lg"
+              variant="primary"
+              icon={CheckCircle2}
+              fullWidth
+              loading={busy}
               onClick={() => onApprove(user.id)}
-              disabled={busy}
-              className="flex-1 px-6 py-2.5 bg-[#ba0036] hover:bg-[#90002a] text-white rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               Approve & Verify
-            </button>
+            </Button>
           </>
         )}
       </div>
-    </div>
+    </Card>
   );
 };
 
@@ -366,7 +387,7 @@ const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) =>
     : 'Super admins are protected';
 
   return (
-    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all flex items-center gap-4">
+    <Card padding="sm" hover className="flex items-center gap-4">
       <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
         {user.avatar ? (
           <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
@@ -378,11 +399,7 @@ const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) =>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <h3 className="text-sm font-black text-gray-900 truncate">{user.name}</h3>
-          {user.isBanned && (
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#ba0036] bg-red-50 px-2 py-0.5 rounded">
-              Banned
-            </span>
-          )}
+          {user.isBanned && <Badge size="sm" tone="brand">Banned</Badge>}
         </div>
         <p className="text-[11px] font-bold text-gray-500 truncate">
           {user.phone}{user.email ? ` • ${user.email}` : ''}
@@ -396,53 +413,46 @@ const UserRow = ({ user, busyId, onBan, onUnban, currentUser, onChangeRole }) =>
         <StatusChip status={status} />
       </div>
 
-      <div className="shrink-0 flex items-center">
+      <div className="shrink-0 flex items-center gap-2">
         {user.isBanned ? (
-          <button
-            onClick={() => onUnban(user.id)}
-            disabled={busy}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+          <Button size="sm" icon={RotateCcw} loading={busy} onClick={() => onUnban(user.id)}>
             Unban
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
+            size="sm"
+            icon={Ban}
+            loading={busy}
+            disabled={locked}
+            title={locked ? lockReason : 'Ban this user'}
             onClick={() => onBan(user.id)}
-            disabled={busy || locked}
-            title={locked ? lockReason : ''}
-            className="px-4 py-2 bg-white border border-gray-200 hover:border-[#ba0036] text-gray-600 hover:text-[#ba0036] rounded-lg font-black text-xs transition-all disabled:opacity-30 flex items-center gap-1.5"
           >
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
             Ban
-          </button>
+          </Button>
         )}
-        <button
+        <Button
+          size="sm"
+          variant="danger"
+          icon={Trash2}
+          loading={busy}
+          disabled={locked}
+          title={locked ? lockReason : 'Permanently delete user'}
           onClick={() => onBan(user.id, true)}
-          disabled={busy || locked}
-          title={locked ? lockReason : 'Permanently Delete User'}
-          className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-black text-xs transition-all disabled:opacity-30 flex items-center gap-1.5 ml-2"
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
           Delete
-        </button>
+        </Button>
         {isSuperAdmin && (
-          <select
+          <Select
             value={user.role || 'tenant'}
             onChange={(e) => onChangeRole(user.id, e.target.value)}
             disabled={busy || locked}
-            title={locked ? lockReason : 'Change User Role'}
-            className="ml-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:border-[#ba0036] transition-all disabled:opacity-50 cursor-pointer"
-          >
-            <option value="tenant">Tenant</option>
-            <option value="landlord">Landlord</option>
-            <option value="support_agent">Support Agent</option>
-            <option value="moderator">Moderator</option>
-            <option value="super_admin">Super Admin</option>
-          </select>
+            title={locked ? lockReason : 'Change user role'}
+            className="py-2"
+            options={ROLE_OPTIONS}
+          />
         )}
       </div>
-    </div>
+    </Card>
   );
 };
 
@@ -465,7 +475,7 @@ const LandlordPendingCard = ({ user, busyId, onApprove, onReject }) => {
     : '—';
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all">
+    <Card padding="lg" hover>
       <div className="flex items-center gap-4 mb-6">
         <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
           {user.avatar ? (
@@ -560,43 +570,46 @@ const LandlordPendingCard = ({ user, busyId, onApprove, onReject }) => {
       <div className="flex flex-col sm:flex-row gap-3">
         {showReject ? (
           <>
-            <button
-              onClick={() => { setShowReject(false); setReason(''); }}
+            <Button
+              size="lg"
+              variant="ghost"
+              fullWidth
               disabled={busy}
-              className="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all disabled:opacity-50"
+              onClick={() => { setShowReject(false); setReason(''); }}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              size="lg"
+              variant="primary"
+              icon={XCircle}
+              fullWidth
+              loading={busy}
+              disabled={!reason.trim()}
               onClick={() => onReject(user.id, reason.trim())}
-              disabled={busy || !reason.trim()}
-              className="flex-1 px-6 py-2.5 bg-[#ba0036] hover:bg-[#90002a] text-white rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
               Send Rejection
-            </button>
+            </Button>
           </>
         ) : (
           <>
-            <button
-              onClick={() => setShowReject(true)}
-              disabled={busy}
-              className="flex-1 px-6 py-3 bg-white border border-gray-200 hover:border-[#ba0036] text-gray-700 hover:text-[#ba0036] rounded-xl font-black text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <XCircle size={16} /> Reject
-            </button>
-            <button
+            <Button size="lg" icon={XCircle} fullWidth disabled={busy} onClick={() => setShowReject(true)}>
+              Reject
+            </Button>
+            <Button
+              size="lg"
+              variant="primary"
+              icon={CheckCircle2}
+              fullWidth
+              loading={busy}
               onClick={() => onApprove(user.id)}
-              disabled={busy}
-              className="flex-1 px-6 py-2.5 bg-[#ba0036] hover:bg-[#90002a] text-white rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               Approve as Landlord
-            </button>
+            </Button>
           </>
         )}
       </div>
-    </div>
+    </Card>
   );
 };
 
@@ -625,11 +638,14 @@ const UserManagement = () => {
   const [error,           setError]           = useState('');
   const [search,          setSearch]          = useState('');
   const [roleFilter,      setRoleFilter]      = useState('');
-  const [toast,           setToast]           = useState(null);
 
+  // Notifications go through sonner, like every other page. This screen used to
+  // ship its own fixed-position toast with its own timer and gradient, so the
+  // same "user banned" outcome appeared bottom-right here and top-right
+  // everywhere else — and two toasts could sit on screen at once.
   const showToast = useCallback((message, kind = 'success') => {
-    setToast({ message, kind });
-    setTimeout(() => setToast(null), 3500);
+    if (kind === 'error') toast.error(message);
+    else toast.success(message);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -764,105 +780,65 @@ const UserManagement = () => {
   const pendingCount         = pending.length;
   const pendingLandlordCount = pendingLandlord.length;
 
-  return (
-    <div className="max-w-6xl mx-auto pt-4 pb-12 space-y-6">
-      {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-gray-900 tracking-tight">User Management</h1>
-          <p className="text-sm font-bold text-gray-500 mt-2">
-            Approve verifications, manage roles, and moderate accounts.
-          </p>
-        </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-xl text-xs font-black text-gray-700 shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_25px_rgba(186,0,54,0.08)] hover:text-[#ba0036] transition-all disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-      </div>
+  const tabsWithCounts = TABS.map((tab) => ({
+    ...tab,
+    badge: tab.value === 'pending' && pendingCount > 0 ? pendingCount
+      : tab.value === 'pending-landlord' && pendingLandlordCount > 0 ? pendingLandlordCount
+        : undefined,
+  }));
 
-      {/* Tabs */}
-      <div className="flex gap-2 bg-white rounded-xl p-1.5 border border-gray-200 shadow-sm w-fit overflow-x-auto max-w-full hide-scrollbar">
-        {TABS.map((tab) => {
-          const active = activeTab === tab.id;
-          let badge = null;
-          if (tab.id === 'pending'          && pendingCount         > 0) badge = pendingCount;
-          if (tab.id === 'pending-landlord' && pendingLandlordCount > 0) badge = pendingLandlordCount;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
-                active
-                  ? 'bg-gray-100 text-gray-900 shadow-sm border border-gray-200'
-                  : 'text-gray-500 hover:text-gray-900 border border-transparent'
-              }`}
-            >
-              {tab.label}
-              {badge !== null && (
-                <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-md text-[10px] font-black ${
-                  active ? 'bg-[#ba0036] text-white' : 'bg-gray-200 text-gray-600'
-                }`}>
-                  {badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+  return (
+    <PageContainer className="space-y-6">
+      <PageHeader
+        title="User Management"
+        description="Approve verifications, manage roles, and moderate accounts."
+        actions={(
+          <Button icon={RefreshCw} iconClassName={loading ? 'animate-spin' : ''} disabled={loading} onClick={refresh}>
+            Refresh
+          </Button>
+        )}
+      />
+
+      <Tabs tabs={tabsWithCounts} value={activeTab} onChange={setActiveTab} />
 
       {/* Filters — only on All Users tab */}
       {activeTab === 'all' && (
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name, phone, or email…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 rounded-xl outline-none text-sm font-bold text-gray-800 placeholder:text-gray-400 focus:bg-white focus:shadow-[0_4px_15px_rgba(186,0,54,0.05)] transition-all"
-            />
-          </div>
-          <div className="flex gap-2">
-            {['', 'tenant', 'landlord', 'super_admin'].map((r) => (
-              <button
-                key={r || 'all'}
-                onClick={() => setRoleFilter(r)}
-                className={`px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
-                  roleFilter === r
-                    ? 'bg-gray-800 text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200'
-                }`}
+        <Card padding="sm" className="flex flex-col md:flex-row gap-3">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name, phone, or email…"
+          />
+          <div className="flex gap-2 flex-wrap">
+            {ROLE_FILTERS.map((r) => (
+              <Button
+                key={r.value || 'all'}
+                variant={roleFilter === r.value ? 'primary' : 'secondary'}
+                onClick={() => setRoleFilter(r.value)}
               >
-                {r || 'All'}
-              </button>
+                {r.label}
+              </Button>
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Error banner */}
       {error && (
-        <div className="bg-red-50 border border-red-100 text-[#ba0036] rounded-2xl p-4 text-sm font-bold flex items-center gap-2">
+        <div className="bg-red-50 border border-red-100 text-[#ba0036] rounded-2xl p-4 text-sm font-bold flex items-center gap-2" role="alert">
           <AlertTriangle size={16} /> {error}
         </div>
       )}
 
       {/* Content */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="text-[#ba0036] animate-spin" />
-        </div>
+        <LoadingState label="Loading users" />
       ) : activeTab === 'pending' ? (
         pending.length === 0 ? (
           <EmptyState
             icon={ShieldCheck}
             title="No pending tenant submissions"
-            subtitle="When users submit identity documents, they'll appear here for review."
+            description="When users submit identity documents, they'll appear here for review."
           />
         ) : (
           <div className="space-y-6">
@@ -876,7 +852,7 @@ const UserManagement = () => {
           <EmptyState
             icon={ShieldCheck}
             title="No pending landlord submissions"
-            subtitle="Verified tenants who want to list properties — plus fresh landlord signups — appear here once they submit."
+            description="Verified tenants who want to list properties — plus fresh landlord signups — appear here once they submit."
           />
         ) : (
           <div className="space-y-6">
@@ -890,7 +866,7 @@ const UserManagement = () => {
           <EmptyState
             icon={Users}
             title="No users match"
-            subtitle="Try a different search or clear the role filter."
+            description="Try a different search or clear the role filter."
           />
         ) : (
           <div className="space-y-3">
@@ -909,31 +885,8 @@ const UserManagement = () => {
         )
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 px-5 py-4 rounded-2xl shadow-[0_20px_50px_-10px_rgba(0,0,0,0.3)] flex items-center gap-3 text-sm font-black min-w-[280px] animate-in fade-in slide-in-from-bottom-4 ${
-          toast.kind === 'error'
-            ? 'bg-[#ba0036] text-white'
-            : 'bg-gradient-to-r from-emerald-500 to-green-600 text-white'
-        }`}>
-          {toast.kind === 'error'
-            ? <AlertTriangle size={20} className="shrink-0" />
-            : <CheckCircle2 size={20} className="shrink-0" />}
-          <span className="flex-1">{toast.message}</span>
-        </div>
-      )}
-    </div>
+    </PageContainer>
   );
 };
-
-const EmptyState = ({ icon: Icon, title, subtitle }) => (
-  <div className="bg-white rounded-[2rem] p-12 text-center shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
-    <div className="w-20 h-20 bg-[#ba0036]/5 text-[#ba0036] rounded-full flex items-center justify-center mx-auto mb-4">
-      <Icon size={32} />
-    </div>
-    <h3 className="text-xl font-black text-gray-900">{title}</h3>
-    <p className="text-gray-500 font-bold mt-2">{subtitle}</p>
-  </div>
-);
 
 export default UserManagement;

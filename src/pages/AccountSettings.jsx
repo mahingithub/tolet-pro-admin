@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Phone, Lock, Save, Loader2, ShieldCheck, KeyRound, Smartphone, QrCode, X } from 'lucide-react';
+import { User, Mail, Phone, Lock, Save, ShieldCheck, KeyRound, Smartphone, QrCode, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import { changePassword, generate2FASecret, enable2FA, disable2FA } from '../services/adminAuthService.js';
+import {
+  PageContainer, PageHeader, Card, Badge, Button,
+} from '../components/ui';
 
 const ROLE_LABEL = {
   super_admin: 'Super Admin',
@@ -154,15 +157,14 @@ const AccountSettings = () => {
     'w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 placeholder:text-gray-400 focus:bg-white focus:border-[#ba0036] outline-none transition-all';
 
   return (
-    <div className="max-w-2xl mx-auto pt-4 pb-12 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">Account Settings</h1>
-        <p className="text-sm font-bold text-gray-500 mt-2">Manage your profile and password.</p>
-      </div>
+    <PageContainer width="narrow" className="space-y-6">
+      <PageHeader
+        title="Account Settings"
+        description="Manage your profile, password and two-factor authentication."
+      />
 
       {/* Profile */}
-      <form onSubmit={saveProfile} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
+      <Card as="form" padding="lg" onSubmit={saveProfile} className="space-y-5">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#ba0036] to-[#d11147] flex items-center justify-center text-white font-black overflow-hidden shrink-0">
             {user?.avatar ? (
@@ -173,9 +175,7 @@ const AccountSettings = () => {
           </div>
           <div>
             <h2 className="text-sm font-black text-gray-900">Profile</h2>
-            <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-[#ba0036] bg-[#ba0036]/10 border border-[#ba0036]/20 px-2 py-0.5 rounded-lg mt-1">
-              <ShieldCheck size={11} /> {roleLabel}
-            </span>
+            <Badge tone="brand" icon={ShieldCheck} className="mt-1">{roleLabel}</Badge>
           </div>
         </div>
 
@@ -204,18 +204,14 @@ const AccountSettings = () => {
         </div>
 
         <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={savingProfile || !profileDirty}
-            className="inline-flex items-center gap-2 bg-[#ba0036] text-white px-5 py-2.5 rounded-xl font-black text-xs hover:bg-[#90002a] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save changes
-          </button>
+          <Button type="submit" variant="primary" icon={Save} loading={savingProfile} disabled={!profileDirty}>
+            Save changes
+          </Button>
         </div>
-      </form>
+      </Card>
 
       {/* Security */}
-      <form onSubmit={submitPassword} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
+      <Card as="form" padding="lg" onSubmit={submitPassword} className="space-y-5">
         <div className="flex items-center gap-2">
           <KeyRound size={16} className="text-[#ba0036]" />
           <h2 className="text-sm font-black text-gray-900">Change password</h2>
@@ -248,18 +244,20 @@ const AccountSettings = () => {
         ))}
 
         <div className="flex justify-end">
-          <button
+          <Button
             type="submit"
-            disabled={changingPw || !curPw || !newPw || !confirmPw}
-            className="inline-flex items-center gap-2 bg-gray-900 text-white px-5 py-2.5 rounded-xl font-black text-xs hover:bg-black transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            variant="primary"
+            icon={KeyRound}
+            loading={changingPw}
+            disabled={!curPw || !newPw || !confirmPw}
           >
-            {changingPw ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} Change password
-          </button>
+            Change password
+          </Button>
         </div>
-      </form>
+      </Card>
 
       {/* Two-Factor Authentication */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
+      <Card padding="lg" className="space-y-5">
         <div className="flex items-center gap-2">
           <Smartphone size={16} className="text-[#ba0036]" />
           <h2 className="text-sm font-black text-gray-900">Two-Factor Authentication</h2>
@@ -283,13 +281,9 @@ const AccountSettings = () => {
 
             {!showDisableConfirm ? (
               <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowDisableConfirm(true)}
-                  className="inline-flex items-center gap-2 bg-red-600 text-white px-5 py-2.5 rounded-xl font-black text-xs hover:bg-red-700 transition-all"
-                >
-                  <X size={14} /> Disable 2FA
-                </button>
+                <Button variant="dangerSolid" icon={X} onClick={() => setShowDisableConfirm(true)}>
+                  Disable 2FA
+                </Button>
               </div>
             ) : (
               <form onSubmit={handleDisable2FA} className="space-y-4 p-4 bg-red-50 border border-red-200 rounded-xl">
@@ -309,24 +303,25 @@ const AccountSettings = () => {
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    disabled={loading2FA}
                     onClick={() => {
                       setShowDisableConfirm(false);
                       setDisablePassword('');
                     }}
-                    disabled={loading2FA}
-                    className="px-4 py-2 text-sm font-bold text-gray-700 hover:text-gray-900 transition-colors"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
-                    disabled={loading2FA || !disablePassword}
-                    className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs hover:bg-red-700 transition-all disabled:opacity-40"
+                    variant="dangerSolid"
+                    icon={X}
+                    loading={loading2FA}
+                    disabled={!disablePassword}
                   >
-                    {loading2FA ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />} Confirm Disable
-                  </button>
+                    Confirm Disable
+                  </Button>
                 </div>
               </form>
             )}
@@ -346,14 +341,9 @@ const AccountSettings = () => {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleGenerate2FA}
-                    disabled={loading2FA}
-                    className="inline-flex items-center gap-2 bg-[#ba0036] text-white px-5 py-2.5 rounded-xl font-black text-xs hover:bg-[#90002a] transition-all disabled:opacity-40"
-                  >
-                    {loading2FA ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />} Enable 2FA
-                  </button>
+                  <Button variant="primary" icon={Smartphone} loading={loading2FA} onClick={handleGenerate2FA}>
+                    Enable 2FA
+                  </Button>
                 </div>
               </>
             ) : (
@@ -394,28 +384,25 @@ const AccountSettings = () => {
                 </div>
 
                 <div className="flex gap-2 justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={cancelSetup}
-                    disabled={loading2FA}
-                    className="px-4 py-2 text-sm font-bold text-gray-700 hover:text-gray-900 transition-colors"
-                  >
+                  <Button variant="ghost" disabled={loading2FA} onClick={cancelSetup}>
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
-                    disabled={loading2FA || verifyToken.length !== 6}
-                    className="inline-flex items-center gap-2 bg-[#ba0036] text-white px-5 py-2.5 rounded-xl font-black text-xs hover:bg-[#90002a] transition-all disabled:opacity-40"
+                    variant="primary"
+                    icon={ShieldCheck}
+                    loading={loading2FA}
+                    disabled={verifyToken.length !== 6}
                   >
-                    {loading2FA ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />} Verify & Enable
-                  </button>
+                    Verify &amp; Enable
+                  </Button>
                 </div>
               </form>
             )}
           </>
         )}
-      </div>
-    </div>
+      </Card>
+    </PageContainer>
   );
 };
 

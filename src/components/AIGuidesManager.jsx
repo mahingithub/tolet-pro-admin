@@ -73,7 +73,7 @@ const AIGuidesManager = () => {
   if (loading) return <LoadingState label="Loading AI Guides..." />;
 
   return (
-    <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">

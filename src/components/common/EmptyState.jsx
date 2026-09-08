@@ -12,7 +12,10 @@ import React from 'react';
  * }} props
  */
 const EmptyState = ({ icon: Icon, title, description, action, tone = 'neutral' }) => (
-  <div className="bg-white rounded-[2rem] p-12 text-center shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+  // Same surface as ui/Card — an empty panel should have the same corners and
+  // border as the populated one it replaces, or the layout appears to shift
+  // when data arrives.
+  <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-sm">
     <div
       className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
         tone === 'success' ? 'bg-green-50 text-green-500' : 'bg-gray-50 text-gray-400'

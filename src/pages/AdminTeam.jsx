@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ShieldCheck, ShieldAlert, Crown, Users, UserPlus, Search,
-  Loader2, UserMinus, AlertTriangle, Check, X,
+  ShieldAlert, Crown, Users,
+  Loader2, UserMinus, AlertTriangle, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import {
   listTeam, searchCandidates, grantAdmin, updateAdminRole, revokeAdmin,
 } from '../services/teamService.js';
+import {
+  PageContainer, PageHeader, Card, CardHeader, Badge, Button, Select,
+  SearchInput, LoadingState, EmptyState,
+} from '../components/ui';
 
 // Admin role catalogue (least → most privileged).
 const ROLES = [
@@ -20,11 +24,13 @@ const ROLE_LABEL = {
   moderator: 'Moderator',
   super_admin: 'Super Admin',
 };
-const roleBadge = (role) => ({
-  support_agent: 'bg-blue-50 text-blue-700 border-blue-100',
-  moderator: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-  super_admin: 'bg-[#ba0036]/10 text-[#ba0036] border-[#ba0036]/20',
-}[role] || 'bg-gray-100 text-gray-600 border-gray-200');
+// Role → shared Badge tone, so a role reads the same here, in the sidebar and
+// in the user directory.
+const roleTone = (role) => ({
+  support_agent: 'info',
+  moderator: 'indigo',
+  super_admin: 'brand',
+}[role] || 'neutral');
 
 // Map backend error codes → friendly English.
 const errMsg = (err) => {
@@ -56,49 +62,44 @@ const AdminRow = ({ admin, isSelf, isLastSuperAdmin, busy, onChangeRole, onRevok
     : 'The last super admin is protected';
 
   return (
-    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm flex items-center gap-4 flex-wrap">
+    <Card padding="sm" className="flex items-center gap-4 flex-wrap">
       <Avatar user={admin} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-black text-gray-900 truncate">{admin.name}</h3>
           {admin.adminRole === 'super_admin' && <Crown size={13} className="text-[#ba0036] shrink-0" />}
-          {isSelf && (
-            <span className="text-[9px] font-black uppercase tracking-widest text-gray-500 bg-gray-100 px-2 py-0.5 rounded">You</span>
-          )}
+          {isSelf && <Badge size="sm">You</Badge>}
         </div>
         <p className="text-[11px] font-bold text-gray-500 truncate">
           {admin.phone}{admin.email ? ` • ${admin.email}` : ''}
         </p>
       </div>
 
-      <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${roleBadge(admin.adminRole)}`}>
+      <Badge tone={roleTone(admin.adminRole)}>
         {ROLE_LABEL[admin.adminRole] || admin.adminRole}
-      </span>
+      </Badge>
 
       <div className="flex items-center gap-2">
-        <select
+        <Select
           value={admin.adminRole || ''}
           disabled={locked || busy}
           title={locked ? lockReason : 'Change role'}
           onChange={(e) => onChangeRole(admin, e.target.value)}
-          className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:border-[#ba0036] transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-        >
-          {ROLES.map((r) => (
-            <option key={r.value} value={r.value}>{r.label}</option>
-          ))}
-        </select>
+          options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
+        />
 
-        <button
-          onClick={() => onRevoke(admin)}
-          disabled={locked || busy}
+        <Button
+          variant="danger"
+          icon={UserMinus}
+          loading={busy}
+          disabled={locked}
           title={locked ? lockReason : 'Revoke admin access'}
-          className="px-3 py-2 bg-white border border-red-200 text-red-600 rounded-lg font-black text-xs hover:bg-red-50 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
+          onClick={() => onRevoke(admin)}
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <UserMinus size={12} />}
           Revoke
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 };
 
@@ -112,33 +113,22 @@ const CandidateRow = ({ user, busy, onGrant }) => {
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-black text-gray-900 truncate">{user.name}</h4>
           {user.adminRole && (
-            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${roleBadge(user.adminRole)}`}>
-              {ROLE_LABEL[user.adminRole]}
-            </span>
+            <Badge size="sm" tone={roleTone(user.adminRole)}>{ROLE_LABEL[user.adminRole]}</Badge>
           )}
         </div>
         <p className="text-[11px] font-bold text-gray-500 truncate">
           {user.phone}{user.email ? ` • ${user.email}` : ''}
         </p>
       </div>
-      <select
+      <Select
         value={role}
         onChange={(e) => setRole(e.target.value)}
         disabled={busy}
-        className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:border-[#ba0036] transition-all cursor-pointer disabled:opacity-40"
-      >
-        {ROLES.map((r) => (
-          <option key={r.value} value={r.value}>{r.label}</option>
-        ))}
-      </select>
-      <button
-        onClick={() => onGrant(user, role)}
-        disabled={busy}
-        className="px-4 py-2 bg-[#ba0036] text-white rounded-lg font-black text-xs hover:bg-[#90002a] transition-all disabled:opacity-50 flex items-center gap-1.5"
-      >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+        options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
+      />
+      <Button variant="primary" icon={Check} loading={busy} onClick={() => onGrant(user, role)}>
         {user.adminRole ? 'Update' : 'Grant'}
-      </button>
+      </Button>
     </div>
   );
 };
@@ -239,66 +229,46 @@ const AdminTeam = () => {
   // Non-super-admins never see the tooling.
   if (!isSuperAdmin) {
     return (
-      <div className="max-w-2xl mx-auto pt-10">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center">
-          <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <ShieldAlert size={30} />
-          </div>
-          <h1 className="text-xl font-black text-gray-900">Restricted</h1>
-          <p className="text-sm font-bold text-gray-500 mt-2 max-w-md mx-auto">
-            Only super admins can manage the admin team. Ask a super admin if you need access changed.
-          </p>
-        </div>
-      </div>
+      <PageContainer width="narrow">
+        <EmptyState
+          icon={ShieldAlert}
+          title="Restricted"
+          description="Only super admins can manage the admin team. Ask a super admin if you need access changed."
+        />
+      </PageContainer>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto pt-4 pb-12 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight flex items-center gap-2">
-          <ShieldCheck size={26} className="text-[#ba0036]" /> Admin Team
-        </h1>
-        <p className="text-sm font-bold text-gray-500 mt-2">
-          Designate other users as admins or sub-admins, and manage their access.
-        </p>
-      </div>
+    <PageContainer className="space-y-6">
+      <PageHeader
+        title="Admin Team"
+        description="Designate other users as admins or sub-admins, and manage their access."
+      />
 
       {/* Role legend */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {ROLES.map((r) => (
-          <div key={r.value} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${roleBadge(r.value)}`}>
-              {r.label}
-            </span>
+          <Card key={r.value} padding="sm">
+            <Badge tone={roleTone(r.value)}>{r.label}</Badge>
             <p className="text-[11px] font-bold text-gray-500 mt-2">{r.hint}</p>
-          </div>
+          </Card>
         ))}
       </div>
 
       {/* Add an admin */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-        <h2 className="text-sm font-black text-gray-900 flex items-center gap-2 mb-3">
-          <UserPlus size={16} className="text-[#ba0036]" /> Add an admin
-        </h2>
-        <div className="relative">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
+      <Card>
+        <CardHeader
+          title="Add an admin"
+          description="Search any user, then grant them a console role."
+          className="mb-3"
+        />
+        <div className="flex">
+          <SearchInput
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
             placeholder="Search a user by name, phone, or email…"
-            className="w-full pl-11 pr-10 py-3 bg-gray-50 rounded-xl outline-none text-sm font-bold text-gray-800 placeholder:text-gray-400 focus:bg-white focus:border-[#ba0036] border border-transparent transition-all"
           />
-          {query && (
-            <button
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X size={16} />
-            </button>
-          )}
         </div>
 
         <div className="mt-3 space-y-2">
@@ -317,33 +287,30 @@ const AdminTeam = () => {
             <p className="text-xs font-bold text-gray-400 py-2">Type at least 2 characters.</p>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Current admins */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
-            <Users size={16} className="text-[#ba0036]" /> Current admins
-            <span className="text-[10px] font-black text-gray-400">({admins.length})</span>
-          </h2>
-        </div>
+      <div className="space-y-3">
+        <CardHeader
+          title={`Current admins (${admins.length})`}
+          description="Everyone who can reach this console."
+        />
 
         {superAdminCount <= 1 && (
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 text-amber-700 rounded-xl p-3 text-[12px] font-bold mb-3">
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 text-amber-700 rounded-xl p-3 text-[12px] font-bold">
             <AlertTriangle size={14} className="shrink-0 mt-0.5" />
             There's only one super admin. The last super admin can't be demoted or revoked — add another first if you need to step down.
           </div>
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 size={26} className="text-[#ba0036] animate-spin" />
-          </div>
+          <LoadingState label="Loading team" />
         ) : admins.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center shadow-sm">
-            <Users size={30} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-sm font-bold text-gray-400">No admins yet.</p>
-          </div>
+          <EmptyState
+            icon={Users}
+            title="No admins yet"
+            description="Grant a user a console role above to get started."
+          />
         ) : (
           <div className="space-y-2">
             {admins.map((a) => (
@@ -360,7 +327,7 @@ const AdminTeam = () => {
           </div>
         )}
       </div>
-    </div>
+    </PageContainer>
   );
 };
 

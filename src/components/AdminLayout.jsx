@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Building, Users, MessageSquare,
   LogOut, Search, ChevronDown, Menu, X, Home, Flag, ShieldCheck, CreditCard,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import { toast } from 'sonner';
@@ -36,16 +37,48 @@ const AdminLayout = () => {
     navigate('/login', { replace: true });
   };
 
-  const menuItems = [
-    { path: '/', icon: LayoutDashboard, label: 'Overview' },
-    { path: '/properties', icon: Building, label: 'Property Moderation' },
-    { path: '/users', icon: Users, label: 'User Management' },
-    { path: '/reports', icon: Flag, label: 'User Reports' },
-    { path: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
-    { path: '/support', icon: MessageSquare, label: 'Support & AI' },
-    // Admin team management is super-admin only.
-    { path: '/team', icon: ShieldCheck, label: 'Admin Team', superAdmin: true },
-  ].filter((item) => !item.superAdmin || isSuperAdmin);
+  // Grouped, because a flat list of eight unrelated links gives no sense of
+  // where you are in the product. The sections are the four jobs this console
+  // does: read the numbers, moderate what users submit, grow revenue, run the
+  // console itself.
+  const menuSections = [
+    {
+      label: 'Insight',
+      items: [
+        { path: '/', icon: LayoutDashboard, label: 'Overview' },
+        { path: '/usage', icon: BarChart3, label: 'Usage Tracking' },
+      ],
+    },
+    {
+      label: 'Moderation',
+      items: [
+        { path: '/properties', icon: Building, label: 'Property Moderation' },
+        { path: '/users', icon: Users, label: 'User Management' },
+        { path: '/reports', icon: Flag, label: 'User Reports' },
+      ],
+    },
+    {
+      label: 'Growth',
+      items: [
+        { path: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
+        { path: '/support', icon: MessageSquare, label: 'Support & AI' },
+      ],
+    },
+    {
+      label: 'System',
+      // Admin team management is super-admin only.
+      items: [
+        { path: '/team', icon: ShieldCheck, label: 'Admin Team', superAdmin: true },
+      ],
+    },
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !item.superAdmin || isSuperAdmin),
+    }))
+    // A section whose only entry was super-admin-only would otherwise render as
+    // a heading with nothing under it.
+    .filter((section) => section.items.length > 0);
 
   const isActivePath = (path) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
@@ -91,25 +124,39 @@ const AdminLayout = () => {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
-          {menuItems.map((item) => {
-            const isActive = isActivePath(item.path);
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm ${
-                  isActive
-                    ? 'bg-[#ba0036]/5 text-[#ba0036] border-l-4 border-[#ba0036]'
-                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-4 border-transparent'
-                }`}
-              >
-                <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} />
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-4 py-6 space-y-6 overflow-y-auto custom-scrollbar">
+          {menuSections.map((section) => (
+            <div key={section.label}>
+              <p className="px-4 mb-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                {section.label}
+              </p>
+              <div className="space-y-1">
+                {section.items.map((item) => {
+                  const isActive = isActivePath(item.path);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setIsSidebarOpen(false)}
+                      aria-current={isActive ? 'page' : undefined}
+                      // A filled pill rather than the old left-border accent:
+                      // the border was 4px on the active item and 4px of
+                      // transparent on the rest, so every label still shifted
+                      // by a pixel as the active row changed.
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-bold text-sm ${
+                        isActive
+                          ? 'bg-[#ba0036] text-white shadow-sm'
+                          : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} className="shrink-0" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Sidebar footer — admin identity + sign out */}
@@ -173,10 +220,9 @@ const AdminLayout = () => {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-5">
-            {/* Search icon (mobile only) */}
-            <button className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg sm:hidden transition-colors">
-              <Search size={20} />
-            </button>
+            {/* The mobile-only magnifier that used to sit here had no handler —
+                it looked like a search control and did nothing. Search stays on
+                the desktop topbar, and every page carries its own. */}
 
             {/* Admin Profile */}
             <div className="relative">
@@ -237,15 +283,8 @@ const AdminLayout = () => {
         </div>
       </main>
 
-      {/* Global Scrollbar Styling */}
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
+      {/* Scrollbar helpers live in index.css — they used to be duplicated here
+          as an injected <style>, which meant two copies to keep in step. */}
     </div>
   );
 };

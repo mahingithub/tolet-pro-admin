@@ -19,19 +19,35 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CreditCard, Send, Search, RefreshCw, Smartphone, MessageCircle, Bell,
-  Check, X, Crown, Sparkles, Users, AlertTriangle, Loader2,
+  Send, RefreshCw, Smartphone, MessageCircle, Bell,
+  Check, X, Crown, Sparkles, Users, AlertTriangle,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listSubscriptions, sendSubscriptionOffer } from '../services/adminService';
 import { useAuth } from '../context/AdminAuthContext.jsx';
+import {
+  PageContainer, PageHeader, Card, Tabs, Badge, Button, Select, SearchInput,
+  StatCard,
+} from '../components/ui';
 
 const TIER_TABS = [
-  { key: '', label: 'All plans' },
-  { key: 'pro', label: 'Pro' },
-  { key: 'plus', label: 'Plus' },
-  { key: 'free', label: 'Free' },
+  { value: '', label: 'All plans' },
+  { value: 'pro', label: 'Pro' },
+  { value: 'plus', label: 'Plus' },
+  { value: 'free', label: 'Free' },
+];
+
+const APP_FILTER_OPTIONS = [
+  { value: '', label: 'App: any' },
+  { value: 'true', label: 'App installed' },
+  { value: 'false', label: 'Not installed' },
+];
+
+const WHATSAPP_FILTER_OPTIONS = [
+  { value: '', label: 'WhatsApp: any' },
+  { value: 'true', label: 'Opted in' },
+  { value: 'false', label: 'Not opted in' },
 ];
 
 const CHANNELS = [
@@ -41,10 +57,8 @@ const CHANNELS = [
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, hint: 'Approved template only. Skips users who never opted in.' },
 ];
 
-const tierBadge = (tier) => ({
-  pro: 'bg-amber-100 text-amber-700',
-  plus: 'bg-indigo-100 text-indigo-700',
-}[tier] || 'bg-gray-100 text-gray-500');
+// Plan → shared Badge tone.
+const tierTone = (tier) => ({ pro: 'warning', plus: 'indigo' }[tier] || 'neutral');
 
 const TierIcon = ({ tier }) => {
   if (tier === 'pro') return <Crown size={12} strokeWidth={2.5} />;
@@ -55,37 +69,12 @@ const TierIcon = ({ tier }) => {
 // A yes/no cell. `title` explains WHY, since "No" has several causes
 // (never installed vs. declined notifications) that matter to the admin.
 const YesNo = ({ on, title }) => (
-  <span
-    title={title}
-    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${
-      on ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'
-    }`}
-  >
-    {on ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
-    {on ? 'Yes' : 'No'}
+  <span title={title}>
+    <Badge tone={on ? 'success' : 'neutral'} icon={on ? Check : X}>
+      {on ? 'Yes' : 'No'}
+    </Badge>
   </span>
 );
-
-const StatCard = ({ icon: Icon, label, value, tone = 'gray' }) => {
-  const tones = {
-    gray: 'text-gray-900 bg-gray-100 text-gray-500',
-    amber: 'text-amber-700 bg-amber-50 text-amber-600',
-    indigo: 'text-indigo-700 bg-indigo-50 text-indigo-600',
-    emerald: 'text-emerald-700 bg-emerald-50 text-emerald-600',
-  };
-  const [valueTone, iconBg, iconColor] = (tones[tone] || tones.gray).split(' ');
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconBg} ${iconColor}`}>
-        <Icon size={18} strokeWidth={2.5} />
-      </div>
-      <div className="min-w-0">
-        <p className={`text-xl font-black leading-none ${valueTone}`}>{value ?? '—'}</p>
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">{label}</p>
-      </div>
-    </div>
-  );
-};
 
 const installLabel = (row) => {
   if (row.installState === 'native') return 'Native app registered a push token';
@@ -176,115 +165,80 @@ export default function Subscriptions() {
   const bannedInFilter = Math.max(0, total - reachable);
 
   return (
-    <div className="max-w-7xl mx-auto">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-            <CreditCard size={22} className="text-[#ba0036]" />
-            Subscriptions
-          </h1>
-          <p className="text-sm font-bold text-gray-400 mt-1">
-            Plans, reachability, and special-offer campaigns.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button
-            onClick={() => setModalOpen(true)}
-            disabled={!canSend || reachable === 0}
-            title={
-              !canSend
-                ? 'Only a super admin can send offers'
-                : reachable === 0
-                  ? total > 0
-                    ? 'Every user matching this filter is banned — banned accounts never receive offers'
-                    : 'No users match the current filter'
-                  : 'Compose a special offer'
-            }
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#ba0036] text-white text-sm font-bold hover:bg-[#a10030] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            <Send size={15} />
-            Send Offer
-          </button>
-        </div>
-      </div>
+    <PageContainer width="wide" className="space-y-4">
+      <PageHeader
+        title="Subscriptions"
+        description="Plans, reachability, and special-offer campaigns."
+        actions={(
+          <>
+            <Button icon={RefreshCw} iconClassName={loading ? 'animate-spin' : ''} disabled={loading} onClick={load}>
+              Refresh
+            </Button>
+            <Button
+              variant="primary"
+              icon={Send}
+              disabled={!canSend || reachable === 0}
+              title={
+                !canSend
+                  ? 'Only a super admin can send offers'
+                  : reachable === 0
+                    ? total > 0
+                      ? 'Every user matching this filter is banned — banned accounts never receive offers'
+                      : 'No users match the current filter'
+                    : 'Compose a special offer'
+              }
+              onClick={() => setModalOpen(true)}
+            >
+              Send Offer
+            </Button>
+          </>
+        )}
+      />
 
       {/* ── Headline counts (whole user base, independent of filters) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-        <StatCard icon={Users} label="Total users" value={counts.users} />
-        <StatCard icon={Crown} label="Pro" value={counts.pro} tone="amber" />
-        <StatCard icon={Sparkles} label="Plus" value={counts.plus} tone="indigo" />
-        <StatCard icon={Smartphone} label="App installed" value={counts.appInstalled} tone="emerald" />
-        <StatCard icon={MessageCircle} label="WhatsApp opt-in" value={counts.whatsappOptIn} tone="emerald" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <StatCard layout="compact" icon={Users} label="Total users" value={counts.users} />
+        <StatCard layout="compact" icon={Crown} label="Pro" value={counts.pro} tone="amber" />
+        <StatCard layout="compact" icon={Sparkles} label="Plus" value={counts.plus} tone="indigo" />
+        <StatCard layout="compact" icon={Smartphone} label="App installed" value={counts.appInstalled} tone="emerald" />
+        <StatCard layout="compact" icon={MessageCircle} label="WhatsApp opt-in" value={counts.whatsappOptIn} tone="emerald" />
       </div>
 
       {/* ── Filters ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
+      <Card padding="sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 bg-gray-50 p-1 rounded-xl">
-            {TIER_TABS.map((t) => (
-              <button
-                key={t.key || 'all'}
-                onClick={() => changeFilter(setTier, t.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  tier === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Tabs tabs={TIER_TABS} value={tier} onChange={(v) => changeFilter(setTier, v)} />
 
-          <select
+          <Select
             value={installed}
             onChange={(e) => changeFilter(setInstalled, e.target.value)}
-            className="px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 bg-white outline-none focus:border-gray-400"
-          >
-            <option value="">App: any</option>
-            <option value="true">App installed</option>
-            <option value="false">Not installed</option>
-          </select>
+            options={APP_FILTER_OPTIONS}
+          />
 
-          <select
+          <Select
             value={whatsapp}
             onChange={(e) => changeFilter(setWhatsapp, e.target.value)}
-            className="px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 bg-white outline-none focus:border-gray-400"
-          >
-            <option value="">WhatsApp: any</option>
-            <option value="true">Opted in</option>
-            <option value="false">Not opted in</option>
-          </select>
+            options={WHATSAPP_FILTER_OPTIONS}
+          />
 
-          <form onSubmit={onSearch} className="relative flex-1 min-w-[200px]">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search name, phone, or email…"
-              className="w-full bg-gray-50 py-2 pl-10 pr-3 rounded-xl border border-transparent focus:border-gray-200 focus:bg-white outline-none font-bold text-xs text-gray-800 transition-all"
-            />
-          </form>
+          <SearchInput
+            value={searchInput}
+            onChange={setSearchInput}
+            onSubmit={onSearch}
+            placeholder="Search name, phone, or email…"
+          />
 
           {filtersActive && (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => {
                 setPage(1);
                 setTier(''); setInstalled(''); setWhatsapp('');
                 setSearch(''); setSearchInput('');
               }}
-              className="text-xs font-bold text-gray-400 hover:text-gray-900 transition-colors"
             >
               Clear
-            </button>
+            </Button>
           )}
         </div>
 
@@ -297,10 +251,10 @@ export default function Subscriptions() {
             </span>
           )}
         </p>
-      </div>
+      </Card>
 
       {/* ── Table ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <Card padding="none" className="overflow-hidden">
         <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -337,10 +291,10 @@ export default function Subscriptions() {
                   </td>
 
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black uppercase ${tierBadge(r.tier)}`}>
+                    <Badge tone={tierTone(r.tier)}>
                       <TierIcon tier={r.tier} />
                       {r.tier}
-                    </span>
+                    </Badge>
                   </td>
 
                   {/* The raw billing row behind the derived tier — a 'free'
@@ -397,30 +351,28 @@ export default function Subscriptions() {
 
             {totalPages > 1 && (
               <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1 || loading}
+                <Button
+                  size="sm"
+                  icon={ChevronLeft}
                   aria-label="Previous page"
-                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeft size={15} />
-                </button>
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                />
                 <span className="text-[11px] font-bold text-gray-500 px-1.5">
                   Page {page} of {totalPages}
                 </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages || loading}
+                <Button
+                  size="sm"
+                  icon={ChevronRight}
                   aria-label="Next page"
-                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRight size={15} />
-                </button>
+                  disabled={page >= totalPages || loading}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                />
               </div>
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       {modalOpen && (
         <OfferModal
@@ -429,7 +381,7 @@ export default function Subscriptions() {
           onClose={() => setModalOpen(false)}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -510,9 +462,7 @@ function OfferModal({ audienceSize, filters, onClose }) {
               Reaching <span className="text-gray-900">{audienceSize}</span> user(s) matching the current filter.
             </p>
           </div>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
-            <X size={18} />
-          </button>
+          <Button variant="ghost" size="sm" icon={X} aria-label="Close" onClick={onClose} />
         </div>
 
         {result ? (
@@ -649,20 +599,17 @@ function OfferModal({ audienceSize, filters, onClose }) {
             )}
 
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                onClick={onClose}
-                className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
+              <Button size="lg" variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button
+                size="lg"
+                variant="primary"
+                icon={Send}
+                loading={sending}
+                disabled={!!problem}
                 onClick={submit}
-                disabled={!!problem || sending}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#ba0036] text-white text-sm font-bold hover:bg-[#a10030] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 {sending ? 'Sending…' : `Send to ${audienceSize}`}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -772,12 +719,7 @@ function ResultPanel({ result, onClose }) {
         gateway rejected the message. The reason line under each channel says which.
       </p>
 
-      <button
-        onClick={onClose}
-        className="w-full px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-bold hover:bg-gray-800 transition-colors"
-      >
-        Done
-      </button>
+      <Button size="lg" variant="primary" fullWidth onClick={onClose}>Done</Button>
     </div>
   );
 }

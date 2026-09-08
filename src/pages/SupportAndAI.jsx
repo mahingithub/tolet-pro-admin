@@ -17,9 +17,10 @@ import {
 } from '../services/supportService.js';
 import { logAuditAction } from '../services/adminService.js';
 import { useAuth } from '../context/AdminAuthContext.jsx';
-import LoadingState from '../components/common/LoadingState.jsx';
-import EmptyState from '../components/common/EmptyState.jsx';
-import ErrorState from '../components/common/ErrorState.jsx';
+import {
+  PageContainer, PageHeader, Tabs, Button, SearchInput,
+  LoadingState, EmptyState, ErrorState,
+} from '../components/ui';
 import AIGuidesManager from '../components/AIGuidesManager.jsx';
 
 /** Canned admin reply templates. */
@@ -167,44 +168,28 @@ const SupportAndAI = () => {
   }, [tickets, statusFilter, searchQuery]);
 
   return (
-    <div className="max-w-[1400px] mx-auto pt-4 pb-12 h-[calc(100vh-100px)] flex flex-col">
-      <header className="mb-6 shrink-0">
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight">Support &amp; AI Oversight</h1>
-            <p className="text-sm font-bold text-gray-500 mt-2">
-              Live tickets handed off from the AI assistant + every Help Center request, in one inbox.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-xs font-black text-gray-500">
-            <SignedInChip name={adminUser?.name ?? 'Admin'} />
-            <button
-              onClick={refreshList}
-              className="flex items-center gap-1.5 bg-white px-3 py-2 rounded-xl shadow-sm hover:shadow transition-all"
-              title="Refresh ticket list"
-            >
-              <RefreshCcw size={12} /> Refresh
-            </button>
-          </div>
-        </div>
-        <div className="flex gap-6 mt-6 border-b border-gray-200">
-          <button
-            onClick={() => setActiveMainTab('tickets')}
-            className={`pb-3 text-xs font-black uppercase tracking-widest transition-colors ${
-              activeMainTab === 'tickets' ? 'text-[#ba0036] border-b-2 border-[#ba0036]' : 'text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            Support Tickets
-          </button>
-          <button
-            onClick={() => setActiveMainTab('ai_guides')}
-            className={`pb-3 text-xs font-black uppercase tracking-widest transition-colors flex items-center gap-2 ${
-              activeMainTab === 'ai_guides' ? 'text-[#ba0036] border-b-2 border-[#ba0036]' : 'text-gray-400 hover:text-gray-600'
-            }`}
-          >
-            <Video size={14} /> AI Video Guides
-          </button>
-        </div>
+    <PageContainer width="wide" className="h-[calc(100vh-100px)] flex flex-col">
+      <header className="mb-6 shrink-0 space-y-5">
+        <PageHeader
+          title="Support & AI Oversight"
+          description="Live tickets handed off from the AI assistant + every Help Center request, in one inbox."
+          actions={(
+            <>
+              <SignedInChip name={adminUser?.name ?? 'Admin'} />
+              <Button icon={RefreshCcw} onClick={refreshList} title="Refresh ticket list">
+                Refresh
+              </Button>
+            </>
+          )}
+        />
+        <Tabs
+          value={activeMainTab}
+          onChange={setActiveMainTab}
+          tabs={[
+            { value: 'tickets', label: 'Support Tickets' },
+            { value: 'ai_guides', label: 'AI Video Guides', icon: Video },
+          ]}
+        />
       </header>
 
       {activeMainTab === 'ai_guides' ? (
@@ -214,39 +199,27 @@ const SupportAndAI = () => {
       ) : (
       <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
         {/* ── ticket list ── */}
-        <aside className="col-span-12 md:col-span-3 bg-white rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden min-h-0">
+        <aside className="col-span-12 md:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-0">
           <div className="p-5 pb-0 shrink-0">
-            <div className="relative mb-4">
-              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
+            <div className="flex mb-4">
+              <SearchInput
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={setSearchQuery}
                 placeholder="Search subject, name, phone…"
-                className="w-full bg-[#eaeff5]/50 py-3 pl-12 pr-4 rounded-xl outline-none font-bold text-sm text-gray-800 focus:bg-[#eaeff5] transition-all"
               />
             </div>
 
-            <div className="flex gap-2 mb-4 overflow-x-auto -mx-1 px-1 pb-1">
-              {([
-                { id: 'all', label: 'All' },
-                { id: 'open', label: 'Open' },
-                { id: 'pending_user', label: 'Awaiting user' },
-                { id: 'resolved', label: 'Resolved' },
-              ]).map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setStatusFilter(f.id)}
-                  className={`px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all ${
-                    statusFilter === f.id
-                      ? 'bg-[#ba0036] text-white shadow-[0_4px_15px_rgba(186,0,54,0.3)]'
-                      : 'bg-[#eaeff5]/50 text-gray-500 hover:bg-[#eaeff5]'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            <Tabs
+              className="mb-4"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              tabs={[
+                { value: 'all', label: 'All' },
+                { value: 'open', label: 'Open' },
+                { value: 'pending_user', label: 'Awaiting user' },
+                { value: 'resolved', label: 'Resolved' },
+              ]}
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 pb-3 custom-scrollbar space-y-2">
@@ -303,7 +276,7 @@ const SupportAndAI = () => {
         </aside>
 
         {/* ── conversation thread ── */}
-        <section className="col-span-12 md:col-span-6 bg-white rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden min-h-0">
+        <section className="col-span-12 md:col-span-6 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-0">
           {!activeId && (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
               <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4">
@@ -452,7 +425,7 @@ const SupportAndAI = () => {
         {/* ── user context rail ── */}
         <aside className="col-span-12 md:col-span-3 space-y-4 overflow-y-auto custom-scrollbar min-h-0 pb-2">
           {!activeTicket && (
-            <div className="bg-white rounded-[2rem] p-8 text-center shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+            <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-sm">
               <UserIcon size={28} className="text-gray-300 mx-auto mb-3" />
               <h4 className="text-sm font-black text-gray-900">User context</h4>
               <p className="text-xs font-bold text-gray-500 mt-2">
@@ -467,7 +440,7 @@ const SupportAndAI = () => {
         </aside>
       </div>
       )}
-    </div>
+    </PageContainer>
   );
 };
 
@@ -553,7 +526,7 @@ const AdminMessageBubble = ({ message, adminId }) => {
 
 const UserContextCard = ({ ctx, ticket }) => (
   <>
-    <div className="bg-white rounded-[2rem] p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+    <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-4">
         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#ba0036] to-[#8a0028] text-white flex items-center justify-center font-black text-base">
           {ctx.name?.[0]?.toUpperCase() ?? 'U'}
@@ -580,7 +553,7 @@ const UserContextCard = ({ ctx, ticket }) => (
       </div>
     </div>
 
-    <div className="bg-white rounded-[2rem] p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+    <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
       <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3">
         Quick actions
       </h4>

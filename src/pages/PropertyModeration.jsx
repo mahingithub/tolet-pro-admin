@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2, XCircle, MapPin, DollarSign,
-  BedDouble, Bath, Square, User, ShieldAlert, RefreshCw, AlertCircle, Trash2, Loader2
+  BedDouble, Bath, Square, User, ShieldAlert, RefreshCw, AlertCircle, Trash2,
 } from 'lucide-react';
 import { listAdminProperties, moderateProperty, deleteAdminProperty } from '../services/adminService';
+import {
+  PageContainer, PageHeader, Card, Tabs, Badge, Button, EmptyState, LoadingState,
+} from '../components/ui';
 
 // Default to "active" so the moderation page shows what's currently live.
 const STATUS_TABS = [
@@ -73,59 +76,37 @@ const PropertyModeration = () => {
   }, [items.length, loading]);
 
   return (
-    <div className="max-w-5xl mx-auto pt-4 pb-12">
-      {/* Header */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-gray-900 tracking-tight">Property Moderation</h1>
-          <p className="text-sm font-bold text-gray-500 mt-2">
-            Review listings on the platform.{' '}
-            <span className="text-[#ba0036] bg-[#ba0036]/10 px-2 py-0.5 rounded-lg ml-1">
-              {countLabel}
-            </span>
-          </p>
-        </div>
-        <button
-          onClick={hydrate}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-gray-700 text-xs font-black shadow-sm hover:shadow-md transition-all self-start"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
-        </button>
-      </div>
+    <PageContainer className="space-y-6">
+      <PageHeader
+        title="Property Moderation"
+        description="Review listings on the platform."
+        meta={<Badge tone="brand">{countLabel}</Badge>}
+        actions={(
+          <Button icon={RefreshCw} iconClassName={loading ? 'animate-spin' : ''} onClick={hydrate}>
+            Refresh
+          </Button>
+        )}
+      />
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setStatusTab(tab.value)}
-            className={`px-4 py-2 rounded-xl text-xs font-black tracking-wide transition-all ${
-              statusTab === tab.value
-                ? 'bg-[#ba0036] text-white shadow-md'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={STATUS_TABS} value={statusTab} onChange={setStatusTab} />
 
       {error ? (
-        <div className="bg-red-50 text-red-700 text-sm font-bold p-4 rounded-2xl mb-6 flex items-center gap-2" role="alert">
+        <div className="bg-red-50 border border-red-100 text-red-700 text-sm font-bold p-4 rounded-2xl flex items-center gap-2" role="alert">
           <AlertCircle size={16} /> {error}
         </div>
       ) : null}
 
       {/* List */}
       <div className="space-y-6">
-        {!loading && items.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-sm">
-            <div className="w-16 h-16 bg-green-50 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 size={32} />
-            </div>
-            <h3 className="text-xl font-black text-gray-900">All Caught Up!</h3>
-            <p className="text-gray-500 font-bold mt-2 text-sm">No properties in this tab.</p>
-          </div>
+        {loading ? (
+          <LoadingState label="Loading properties" />
+        ) : items.length === 0 ? (
+          <EmptyState
+            icon={CheckCircle2}
+            tone="success"
+            title="All caught up"
+            description="No properties in this tab."
+          />
         ) : (
           items.map((property) => {
             const id = String(property._id || property.id);
@@ -147,10 +128,7 @@ const PropertyModeration = () => {
             extractImages(property.roomPhotos);
 
             return (
-              <div
-                key={id}
-                className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow duration-300"
-              >
+              <Card key={id} padding="md" hover>
                 {/* Images grid */}
                 <div className="mb-5">
                   {allImages.length > 0 ? (
@@ -187,16 +165,10 @@ const PropertyModeration = () => {
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <span className="bg-red-50 border border-red-100 px-2.5 py-1 rounded-md text-[11px] font-black text-[#ba0036] flex items-center gap-1.5 uppercase tracking-wide">
-                        <DollarSign size={12} /> {fmtMoney(property.price)}/mo
-                      </span>
-                      <span className="bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-md text-[11px] font-bold text-gray-600 flex items-center gap-1.5">
-                        <User size={12} className="text-gray-400" /> Host: {property.ownerName || '—'}
-                      </span>
+                      <Badge tone="brand" icon={DollarSign}>{fmtMoney(property.price)}/mo</Badge>
+                      <Badge icon={User}>Host: {property.ownerName || '—'}</Badge>
                       {Number(property.inquiries) > 0 ? (
-                        <span className="bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-md text-[11px] font-bold text-gray-600">
-                          {property.inquiries} inquiries
-                        </span>
+                        <Badge>{property.inquiries} inquiries</Badge>
                       ) : null}
                     </div>
 
@@ -222,38 +194,42 @@ const PropertyModeration = () => {
 
                   <div className="flex items-center gap-2 w-full md:w-auto pt-4 md:pt-0 border-t md:border-t-0 border-gray-100 mt-4 md:mt-0">
                     {property.status === 'active' ? (
-                      <button
+                      <Button
+                        icon={XCircle}
+                        loading={actingId === id}
                         onClick={() => handleAction(id, 'remove')}
-                        disabled={actingId === id}
-                        className="flex-1 md:flex-none px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg font-black text-xs hover:border-gray-300 hover:bg-gray-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 md:flex-none"
                       >
-                        {actingId === id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Remove from public
-                      </button>
+                        Remove from public
+                      </Button>
                     ) : (
-                      <button
+                      <Button
+                        variant="primary"
+                        icon={CheckCircle2}
+                        loading={actingId === id}
                         onClick={() => handleAction(id, 'approve')}
-                        disabled={actingId === id}
-                        className="flex-1 md:flex-none px-4 py-2.5 bg-[#ba0036] text-white rounded-lg font-black text-xs hover:bg-[#90002a] transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm"
+                        className="flex-1 md:flex-none"
                       >
-                        {actingId === id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Restore to active
-                      </button>
+                        Restore to active
+                      </Button>
                     )}
-                    <button
-                      onClick={() => handleAction(id, 'delete')}
+                    <Button
+                      variant="danger"
+                      icon={Trash2}
                       disabled={actingId === id}
-                      className="flex-none px-3 py-2.5 bg-white border border-red-200 text-red-600 rounded-lg font-black hover:bg-red-50 transition-all flex items-center justify-center disabled:opacity-50"
-                      title="Permanently Delete Property"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                      onClick={() => handleAction(id, 'delete')}
+                      title="Permanently delete property"
+                      aria-label="Permanently delete property"
+                      className="flex-none"
+                    />
                   </div>
                 </div>
-              </div>
+              </Card>
             );
           })
         )}
       </div>
-    </div>
+    </PageContainer>
   );
 };
 

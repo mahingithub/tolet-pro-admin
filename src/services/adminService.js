@@ -27,6 +27,16 @@ export const getOverviewStats = async () => {
   return data.stats || {};
 };
 
+// ─── Feature usage tracking ─────────────────────────────────────────────────
+// How many landlords run the management system, how many buildings it keeps,
+// and how many people are on each Living wallet. The server returns COUNTS
+// only — there is no identity in this payload to render.
+// Returns { management, living, definitions, activeWindowDays, generatedAt }.
+export const getUsageStats = async () => {
+  const data = await admin('/usage');
+  return data.stats || {};
+};
+
 // "Interested in selling" demand gauge (Coming Soon lead capture).
 // Returns { stats: { total, registered, guests, last7d }, recent: [...] }.
 export const getSellInterest = async (kind = 'sell') => {
