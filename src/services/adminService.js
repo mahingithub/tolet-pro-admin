@@ -154,10 +154,24 @@ export const listSubscriptions = async (filter = {}) => {
   return admin(qs ? `/subscriptions?${qs}` : '/subscriptions');
 };
 
+// The destinations a campaign is allowed to point at, straight from the list
+// the server validates against — so the picker can never offer a page the send
+// endpoint will reject. Returns { routes[], paramRoutes[], tabs{} }.
+export const listCampaignTargets = async () => admin('/subscriptions/targets');
+
+// Click counts for recent campaign short links. SMS and WhatsApp report
+// delivery at best, so this is the only evidence a campaign was acted on.
+// Returns { rows: [{ code, url, campaign, channel, targetPath, audienceSize,
+//                    clicks, signedInClicks, lastClickAt, createdAt }] }.
+export const listCampaignLinks = async (limit) =>
+  admin(limit ? `/subscriptions/links?limit=${encodeURIComponent(limit)}` : '/subscriptions/links');
+
 // Dispatch a composed offer. `payload` is
-//   { channels[], title, body, smsText?, whatsapp?: { template, languageCode, params[] },
+//   { channels[], title, body, smsText?, targetPath?,
+//     whatsapp?: { mode: 'text'|'template', body?, template?, languageCode?, params[] },
 //     userIds?[], filters?{} }
-// Resolves to { attempted, capped, maxRecipients, sent: { <channel>: {ok,skipped,failed} } }.
+// Resolves to { attempted, capped, maxRecipients, targetPath, links{},
+//               whatsappOverflow, sent: { <channel>: {ok,skipped,failed} } }.
 // Super-admin only server-side — a 403 here means the account lacks that role.
 export const sendSubscriptionOffer = async (payload) =>
   admin('/subscriptions/send-offer', { method: 'POST', body: payload });

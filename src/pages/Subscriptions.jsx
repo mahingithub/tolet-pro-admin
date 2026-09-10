@@ -21,10 +21,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Send, RefreshCw, Smartphone, MessageCircle, Bell,
   Check, X, Crown, Sparkles, Users, AlertTriangle,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Link2, MousePointerClick, Copy, Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { listSubscriptions, sendSubscriptionOffer } from '../services/adminService';
+import {
+  listSubscriptions, sendSubscriptionOffer, listCampaignTargets, listCampaignLinks,
+} from '../services/adminService';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import {
   PageContainer, PageHeader, Card, Tabs, Badge, Button, Select, SearchInput,
@@ -57,6 +59,26 @@ const CHANNELS = [
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, hint: 'Approved template only. Skips users who never opted in.' },
 ];
 
+// The WhatsApp and SMS hints are only true for a particular server. "Approved
+// template only" describes the Meta gateway; on the self-hosted OpenWA gateway
+// the opposite is true — templates are the one thing it CANNOT send — so a
+// fixed string sent admins looking for a template name that would have failed
+// every recipient. The server reports what it can do; this renders that.
+const channelHint = (channel, caps) => {
+  if (channel.key === 'whatsapp') {
+    const wa = caps?.whatsapp;
+    if (!wa) return channel.hint;
+    if (!wa.configured) return 'No WhatsApp gateway is configured on this server.';
+    return wa.mode === 'text'
+      ? `Plain text from your own number (${wa.provider}). Skips users who never opted in.`
+      : 'Approved Meta template only. Skips users who never opted in.';
+  }
+  if (channel.key === 'sms' && caps?.sms && !caps.sms.configured) {
+    return 'No SMS gateway is configured on this server (SMS_API_KEY is unset).';
+  }
+  return channel.hint;
+};
+
 // Plan → shared Badge tone.
 const tierTone = (tier) => ({ pro: 'warning', plus: 'indigo' }[tier] || 'neutral');
 
@@ -76,10 +98,47 @@ const YesNo = ({ on, title }) => (
   </span>
 );
 
-const installLabel = (row) => {
-  if (row.installState === 'native') return 'Native app registered a push token';
-  if (row.installState === 'web') return 'Browser/PWA push token only — no native app';
-  return 'No push token registered (may still have the app without notifications enabled)';
+// How a user is reachable, as a CATEGORY rather than a yes/no.
+//
+// This column used to be derived from push tokens alone, which answered a
+// different question than the one it asked: a token only exists if the user
+// accepted the notification prompt, so someone with the app installed who
+// tapped "Don't allow" was listed as not installed — and excluded from every
+// campaign aimed at app users. The server now also counts app launches
+// (POST /api/app/opened), and reports which kind of client it saw.
+const INSTALL_CATEGORY = {
+  native: {
+    label: 'Native app',
+    tone: 'success',
+    hint: 'The Android/iOS app has been opened on this account, or it registered a native push token.',
+  },
+  pwa: {
+    label: 'Installed PWA',
+    tone: 'indigo',
+    hint: 'Added to the home screen or dock from the browser. Installed — but not the store build.',
+  },
+  web: {
+    label: 'Browser only',
+    tone: 'neutral',
+    hint: 'Only ever seen in a browser tab. Reachable by web push at best, not by an app campaign.',
+  },
+  none: {
+    label: 'Not seen',
+    tone: 'neutral',
+    hint: 'No app launch and no push token recorded. They may still have the app but have not opened it since this tracking shipped.',
+  },
+};
+
+const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
+
+const InstallCell = ({ row }) => {
+  const cat = INSTALL_CATEGORY[row.installState] || INSTALL_CATEGORY.none;
+  const seen = row.lastAppOpenAt ? ` Last opened ${fmtDate(row.lastAppOpenAt)}.` : '';
+  return (
+    <span title={cat.hint + seen}>
+      <Badge tone={cat.tone} icon={row.appInstalled ? Check : X}>{cat.label}</Badge>
+    </span>
+  );
 };
 
 export default function Subscriptions() {
@@ -90,6 +149,11 @@ export default function Subscriptions() {
 
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState({});
+  // What the SERVER can actually send with. The composer used to offer a Meta
+  // template form unconditionally; on a deployment using the self-hosted OpenWA
+  // gateway (which cannot render a Meta template) every WhatsApp blast was
+  // accepted, dispatched, and skipped for every single recipient.
+  const [caps, setCaps] = useState(null);
   const [total, setTotal] = useState(0);
   // Banned users appear in the table but are excluded from a blast, so this —
   // not `total` — is the number of people an offer will actually reach.
@@ -105,6 +169,9 @@ export default function Subscriptions() {
   const [page, setPage] = useState(1);
 
   const [modalOpen, setModalOpen] = useState(false);
+  // Bumped after a successful send so the click panel picks up the new link
+  // without a page reload.
+  const [linkRefresh, setLinkRefresh] = useState(0);
 
   const filters = useMemo(
     () => ({ tier, installed, whatsapp, search }),
@@ -125,6 +192,7 @@ export default function Subscriptions() {
       if (reqId !== reqIdRef.current) return;
       setRows(data.rows || []);
       setCounts(data.counts || {});
+      setCaps(data.channels || null);
       setTotal(data.total || 0);
 
       // Clamp forward if the result set shrank underneath us (a Refresh after
@@ -307,7 +375,7 @@ export default function Subscriptions() {
                     )}
                   </td>
 
-                  <td className="px-4 py-3"><YesNo on={r.appInstalled} title={installLabel(r)} /></td>
+                  <td className="px-4 py-3"><InstallCell row={r} /></td>
                   <td className="px-4 py-3">
                     <YesNo
                       on={r.whatsappOptIn}
@@ -374,11 +442,15 @@ export default function Subscriptions() {
         )}
       </Card>
 
+      <CampaignLinkPanel refreshKey={linkRefresh} />
+
       {modalOpen && (
         <OfferModal
           audienceSize={reachable}
           filters={filters}
+          caps={caps}
           onClose={() => setModalOpen(false)}
+          onSent={() => setLinkRefresh((n) => n + 1)}
         />
       )}
     </PageContainer>
@@ -386,24 +458,141 @@ export default function Subscriptions() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Campaign links — did anyone actually tap?
+// ─────────────────────────────────────────────────────────────────────────────
+// SMS and WhatsApp report delivery at best and nothing after it, so the click on
+// the short link is the only evidence a campaign did anything. Shown as a rate
+// (clicks / audience) rather than a raw number, because "38 clicks" means
+// nothing without knowing whether it went to 40 people or 4,000.
+function CampaignLinkPanel({ refreshKey }) {
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listCampaignLinks(10)
+      .then((res) => { if (!cancelled) setLinks(res.rows || []); })
+      // Silent: this panel is supplementary, and a toast here would fire on
+      // every page load for a deployment that has never sent a campaign.
+      .catch(() => { if (!cancelled) setLinks([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  if (loading || links.length === 0) return null;
+
+  return (
+    <Card padding="none" className="overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+        <MousePointerClick size={14} className="text-gray-400" />
+        <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Campaign clicks</p>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {links.map((l) => {
+          const rate = l.audienceSize > 0 ? Math.round((l.clicks / l.audienceSize) * 100) : null;
+          return (
+            <div key={l.code} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-[13px] font-black text-gray-900 truncate max-w-[320px]">
+                  {l.campaign || '(untitled campaign)'}
+                </p>
+                <p className="text-[11px] font-bold text-gray-400 truncate max-w-[420px]">
+                  <span className="uppercase">{l.channel}</span>
+                  {' → '}{l.targetPath}
+                  {' · '}{fmtDate(l.createdAt)}
+                </p>
+              </div>
+              <div className="flex items-center gap-4 shrink-0">
+                <div className="text-right">
+                  <p className="text-[13px] font-black text-gray-900">
+                    {l.clicks}
+                    {rate !== null && <span className="text-gray-400 font-bold"> / {l.audienceSize} ({rate}%)</span>}
+                  </p>
+                  <p className="text-[10px] font-bold text-gray-400">
+                    {l.signedInClicks} signed in
+                    {l.lastClickAt ? ` · last ${fmtDate(l.lastClickAt)}` : ''}
+                  </p>
+                </div>
+                <CopyLink url={l.url} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// Copy-to-clipboard that reports what happened. navigator.clipboard is
+// unavailable on an insecure origin and can be blocked by permissions policy,
+// so a silent failure here would leave the admin pasting whatever was in the
+// clipboard before into a live campaign.
+function CopyLink({ url }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Link copied');
+    } catch {
+      toast.error(`Could not copy — the link is ${url}`);
+    }
+  };
+  return <Button size="sm" variant="ghost" icon={Copy} aria-label="Copy link" title={url} onClick={copy} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Offer composer
 // ─────────────────────────────────────────────────────────────────────────────
-function OfferModal({ audienceSize, filters, onClose }) {
+function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
   const [channels, setChannels] = useState(['inapp']);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [smsText, setSmsText] = useState('');
+  // Where a tap lands. Defaults to the plan page, which is what the server used
+  // to hardcode — so an admin who ignores this section gets the old behaviour.
+  const [target, setTarget] = useState('/subscription');
+  const [customTarget, setCustomTarget] = useState('');
+  const [targets, setTargets] = useState(null);
+  const [waText, setWaText] = useState('');
   const [waTemplate, setWaTemplate] = useState('');
   const [waLang, setWaLang] = useState('en');
   const [waParams, setWaParams] = useState('');
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
 
+  // Which WhatsApp form to show. The server decides — it is a property of the
+  // configured gateway, not a preference.
+  const waMode = caps?.whatsapp?.mode || 'template';
+  const waProvider = caps?.whatsapp?.provider || 'meta';
+  const waMaxPerBlast = caps?.whatsapp?.maxPerBlast || 0;
+  const waGapMs = caps?.whatsapp?.minGapMs || 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    listCampaignTargets()
+      .then((t) => { if (!cancelled) setTargets(t); })
+      // The picker degrades to the free-text field; the server validates either
+      // way, so a failed preset fetch must not block composing.
+      .catch(() => { if (!cancelled) setTargets({ routes: [], paramRoutes: [], tabs: {} }); });
+    return () => { cancelled = true; };
+  }, []);
+
   const toggle = (key) =>
     setChannels((prev) => (prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]));
 
   const needsCopy = channels.some((c) => c !== 'whatsapp');
   const needsTitle = channels.includes('inapp') || channels.includes('push');
+  const targetPath = (target === '__custom' ? customTarget : target).trim();
+  // Who can actually open the destination. Resolved from the same list the
+  // server validates against, so the warning below cannot drift from the guard
+  // that produces the behaviour it warns about.
+  const targetAccess = useMemo(() => {
+    const bare = targetPath.split('?')[0];
+    const hit = (targets?.routes || []).find((r) => r.path === bare);
+    return hit ? hit.access : 'public';
+  }, [targetPath, targets]);
+  // A link only ships on the channels that have no tap target of their own.
+  const linkedChannels = channels.filter((c) => c === 'sms' || c === 'whatsapp');
 
   // Mirrors the server's validation so the admin gets the reason inline
   // instead of a 400 after the fact.
@@ -411,7 +600,12 @@ function OfferModal({ audienceSize, filters, onClose }) {
     channels.length === 0 ? 'Pick at least one channel.'
     : needsTitle && !title.trim() ? 'A title is required for in-app and push.'
     : needsCopy && !body.trim() ? 'A message body is required.'
-    : channels.includes('whatsapp') && !waTemplate.trim() ? 'WhatsApp needs an approved template name.'
+    : !targetPath ? 'Choose where the message opens.'
+    : !targetPath.startsWith('/') ? 'The destination must be an in-app path like /subscription.'
+    : channels.includes('whatsapp') && waMode === 'template' && !waTemplate.trim()
+      ? 'WhatsApp needs an approved template name.'
+    : channels.includes('whatsapp') && waMode === 'text' && !waText.trim() && !body.trim()
+      ? 'WhatsApp needs message text.'
     : null;
 
   const submit = async () => {
@@ -423,17 +617,22 @@ function OfferModal({ audienceSize, filters, onClose }) {
         title: title.trim(),
         body: body.trim(),
         smsText: smsText.trim(),
+        targetPath,
         filters,
       };
       if (channels.includes('whatsapp')) {
-        payload.whatsapp = {
-          template: waTemplate.trim(),
-          languageCode: waLang.trim() || 'en',
-          params: waParams.split('|').map((p) => p.trim()).filter(Boolean),
-        };
+        payload.whatsapp = waMode === 'text'
+          ? { mode: 'text', body: (waText.trim() || body.trim()) }
+          : {
+              mode: 'template',
+              template: waTemplate.trim(),
+              languageCode: waLang.trim() || 'en',
+              params: waParams.split('|').map((p) => p.trim()).filter(Boolean),
+            };
       }
       const res = await sendSubscriptionOffer(payload);
       setResult(res);
+      onSent?.();
       // `attempted` is how many users were processed, not how many were
       // reached — reporting it as a success made a fully undelivered blast
       // (unconfigured gateway, nobody opted in) look like it worked.
@@ -491,7 +690,7 @@ function OfferModal({ audienceSize, filters, onClose }) {
                       </div>
                       <div className="min-w-0">
                         <p className={`text-[13px] font-black ${on ? 'text-[#ba0036]' : 'text-gray-700'}`}>{c.label}</p>
-                        <p className="text-[10px] font-bold text-gray-400 leading-tight mt-0.5">{c.hint}</p>
+                        <p className="text-[10px] font-bold text-gray-400 leading-tight mt-0.5">{channelHint(c, caps)}</p>
                       </div>
                     </button>
                   );
@@ -532,6 +731,69 @@ function OfferModal({ audienceSize, filters, onClose }) {
               </div>
             )}
 
+            {/* ── Destination ──────────────────────────────────────────────
+                Every channel needs one, but for different reasons. In-app and
+                push carry it as a deep link the tap follows. SMS and WhatsApp
+                have no tap target at all — the message IS the text — so the
+                link is appended to the copy, and it is a SHORT link so it fits
+                inside one billed SMS segment and its clicks can be counted. */}
+            <div>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Opens on tap
+              </label>
+              <Select
+                className="mt-1.5 w-full"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                options={[
+                  ...(targets?.routes || []).map((r) => ({ value: r.path, label: `${r.label} — ${r.path}` })),
+                  { value: '__custom', label: 'Another page…' },
+                ]}
+              />
+
+              {target === '__custom' && (
+                <>
+                  <input
+                    value={customTarget}
+                    onChange={(e) => setCustomTarget(e.target.value)}
+                    placeholder="/property/665f1a2b3c4d5e6f"
+                    className="w-full mt-2 px-3.5 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-gray-400 font-bold text-sm text-gray-800"
+                  />
+                  <p className="text-[10px] font-bold text-gray-400 mt-1 leading-snug">
+                    An in-app path, not a full URL. Also allowed:{' '}
+                    {(targets?.paramRoutes || []).map((p) => p.example).join(', ')}
+                    {' — and '}?tab= on either dashboard.
+                  </p>
+                </>
+              )}
+
+              <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">
+                {linkedChannels.length > 0
+                  ? `A short toletpro.rent/r/… link is added to the ${linkedChannels.join(' and ')} text, and its clicks are counted.`
+                  : 'The notification opens this page in the app.'}
+                {' '}Recipients who are signed out are sent to login first and land here afterwards.
+              </p>
+
+              {/* The failure this prevents is silent. A signed-in user without
+                  the required role is not shown an error — RequireAuth just
+                  redirects them to their own dashboard, so the campaign appears
+                  to have worked while landing half the audience nowhere near
+                  the offer. */}
+              {targetAccess === 'landlord' && (
+                <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-start gap-1 leading-snug">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  Landlord accounts only. A tenant who taps this is redirected to their own
+                  dashboard instead — filter the audience, or pick a page both can open.
+                </p>
+              )}
+              {targetAccess === 'tenant' && (
+                <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-start gap-1 leading-snug">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  Tenant accounts only. A landlord who taps this is redirected away from it.
+                </p>
+              )}
+            </div>
+
             {channels.includes('sms') && (
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -552,7 +814,57 @@ function OfferModal({ audienceSize, filters, onClose }) {
               </div>
             )}
 
-            {channels.includes('whatsapp') && (
+            {/* ── WhatsApp ────────────────────────────────────────────────
+                Two different forms, and the SERVER picks which one — it is a
+                property of the configured gateway, not a preference:
+
+                  • openwa / twilio → free TEXT from our own number. There are
+                    no approved templates to name (only a template's NAME ever
+                    reaches us), which is why every WhatsApp blast on this
+                    provider used to be silently skipped for every recipient.
+                  • meta            → an approved TEMPLATE, because Meta rejects
+                    free-form marketing outside the 24-hour service window. */}
+            {channels.includes('whatsapp') && waMode === 'text' && (
+              <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-3">
+                <p className="text-[11px] font-bold text-emerald-800 leading-snug">
+                  Sent as plain text from your own WhatsApp number (provider:{' '}
+                  <span className="uppercase">{waProvider}</span>) to people who opted in.
+                </p>
+                <div>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    WhatsApp text <span className="text-gray-300">(optional — falls back to the body)</span>
+                  </label>
+                  <textarea
+                    value={waText}
+                    onChange={(e) => setWaText(e.target.value)}
+                    maxLength={900}
+                    rows={3}
+                    placeholder="প্রিয় {{name}}, Pro-তে এখন ৫০% ছাড়…"
+                    className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-gray-400 font-bold text-sm text-gray-800 resize-none"
+                  />
+                </div>
+                {/* The throttle is a per-message gap, so a WhatsApp blast is
+                    serial and its wall-clock cost is worth stating BEFORE the
+                    admin presses send — an apparent hang is otherwise indis-
+                    tinguishable from a broken gateway. */}
+                <p className="text-[10px] font-bold text-amber-700 flex items-start gap-1 leading-snug">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span>
+                    Messages are spaced ~{Math.round(waGapMs / 1000)}s apart so the number is not
+                    flagged as a bot, so this takes roughly{' '}
+                    <span className="text-amber-900">
+                      {Math.ceil((Math.min(audienceSize, waMaxPerBlast || audienceSize) * waGapMs) / 60000)} min
+                    </span>
+                    {audienceSize > waMaxPerBlast && waMaxPerBlast > 0 && (
+                      <> — and only the first {waMaxPerBlast} get WhatsApp. Narrow the filter and send
+                      the rest separately; the other channels still reach everyone.</>
+                    )}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            {channels.includes('whatsapp') && waMode === 'template' && (
               <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-100 space-y-3">
                 <p className="text-[11px] font-bold text-emerald-800 leading-snug">
                   WhatsApp rejects free-form marketing text, so this sends a template you have
@@ -589,6 +901,12 @@ function OfferModal({ audienceSize, filters, onClose }) {
                     className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-gray-400 font-bold text-sm text-gray-800"
                   />
                 </div>
+                {/* A template's approved body cannot carry our short link, so
+                    the destination only applies to the other channels here. */}
+                <p className="text-[10px] font-bold text-gray-500 leading-snug">
+                  The chosen destination does not apply to a Meta template — its wording is fixed on
+                  Meta&apos;s side. Put the link in the template&apos;s own button when you get it approved.
+                </p>
               </div>
             )}
 
@@ -626,6 +944,9 @@ const REASON_LABEL = {
   no_phone: 'no phone number on file',
   no_device: 'no registered device',
   not_configured: 'channel not configured on the server',
+  blast_cap: 'past this blast’s WhatsApp limit — send the rest separately',
+  rate_limited: 'held back by the WhatsApp send throttle',
+  template_unsupported: 'this gateway cannot send a Meta template',
   invalid_recipient: 'invalid phone number',
   push_rejected: 'rejected by the push gateway',
   push_error: 'push service error',
@@ -687,6 +1008,34 @@ function ResultPanel({ result, onClose }) {
           The audience exceeded the {result.maxRecipients}-recipient safety cap, so only the first{' '}
           {result.maxRecipients} were sent. Narrow the filter and send again to reach the rest.
         </p>
+      )}
+
+      {result.whatsappOverflow > 0 && (
+        <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-1.5">
+          <Clock size={13} className="mt-0.5 shrink-0" />
+          WhatsApp is throttled to protect the sending number, so it went to the first{' '}
+          {result.whatsappMaxPerBlast}. {result.whatsappOverflow} more still received the other
+          channels — narrow the filter and send WhatsApp again to reach them.
+        </p>
+      )}
+
+      {/* The exact links recipients received. Worth showing: it is the one part
+          of the message an admin cannot check by looking at their own phone,
+          and a wrong destination is only fixable before the next send. */}
+      {result.targetPath && (
+        <div className="p-3 rounded-xl border border-gray-100 bg-gray-50/60 space-y-1.5">
+          <p className="text-[11px] font-bold text-gray-500 flex items-center gap-1.5">
+            <Link2 size={12} /> Opens <span className="text-gray-900">{result.targetPath}</span>
+          </p>
+          {Object.entries(result.links || {}).map(([ch, url]) => (
+            <div key={ch} className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold text-gray-400 truncate">
+                <span className="uppercase">{ch}</span>: {url}
+              </p>
+              <CopyLink url={url} />
+            </div>
+          ))}
+        </div>
       )}
 
       <div className="space-y-2">
