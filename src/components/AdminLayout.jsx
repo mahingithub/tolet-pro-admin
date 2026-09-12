@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Building, Users, MessageSquare,
   LogOut, Search, ChevronDown, Menu, X, Home, Flag, ShieldCheck, CreditCard,
-  BarChart3,
+  BarChart3, Store,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import { toast } from 'sonner';
@@ -53,6 +53,7 @@ const AdminLayout = () => {
       label: 'Moderation',
       items: [
         { path: '/properties', icon: Building, label: 'Property Moderation' },
+        { path: '/providers', icon: Store, label: 'Service Providers' },
         { path: '/users', icon: Users, label: 'User Management' },
         { path: '/reports', icon: Flag, label: 'User Reports' },
       ],

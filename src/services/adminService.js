@@ -175,3 +175,56 @@ export const listCampaignLinks = async (limit) =>
 // Super-admin only server-side — a 403 here means the account lacks that role.
 export const sendSubscriptionOffer = async (payload) =>
   admin('/subscriptions/send-offer', { method: 'POST', body: payload });
+
+// ─── Service provider verification ──────────────────────────────────────────
+// The ONE point at which admin touches a provider: identity checked once, fee
+// confirmed once, then out of the way. Nothing here is reachable per order.
+//
+// Note the payload is fuller than the tenant-facing one — Provider.toJSON
+// strips the NID/selfie URLs and the TrxID so they cannot leak, and the server
+// rebuilds them explicitly for this console. Treat everything in
+// `verification` and `registration` as sensitive: it is somebody's ID.
+
+// filter: { status, category, q, page, limit }. Defaults to the review queue.
+// Returns { providers[], page, limit, total, hasMore }.
+export const listAdminProviders = async (filter = {}) => {
+  const qs = toQuery(filter);
+  return admin(qs ? `/providers?${qs}` : '/providers');
+};
+
+// Header counts. Returns { pendingReview, awaitingPayment, active, suspended,
+// rejected, expiringSoon }.
+export const getProviderQueueStats = async () => {
+  const data = await admin('/providers/stats');
+  return data.stats || {};
+};
+
+// Returns { provider, owner, canGrantFullTier }. `canGrantFullTier` is the
+// server's own answer to "are the documents actually here" — the UI must ask
+// rather than infer it, because the server refuses the badge on the same rule.
+export const getAdminProvider = async (id) => admin(`/providers/${id}`);
+
+// tier: 'basic' (listed, unbadged) | 'full' (the green ভেরিফাইড badge).
+// A 'full' request with no NID + selfie on file is refused server-side with
+// `insufficient_documents` — that refusal is what makes the badge mean
+// something to the tenant relying on it.
+export const approveProvider = async (id, tier = 'basic') =>
+  admin(`/providers/${id}/approve`, { method: 'POST', body: { tier } });
+
+// `reason` is REQUIRED and is shown to the provider verbatim, so it has to say
+// what to fix — "photo is blurry" not "rejected".
+export const rejectProvider = async (id, reason) =>
+  admin(`/providers/${id}/reject`, { method: 'POST', body: { reason } });
+
+// Confirms the manual registration fee and takes the provider live. There is
+// no payment gateway; the provider sends money and a reference, an admin
+// confirms it. `{ waived: true }` covers a launch promotion — and still sets
+// an expiry, because the expiry is about the listing going stale, not the fee.
+export const confirmProviderPayment = async (id, payload) =>
+  admin(`/providers/${id}/payment`, { method: 'POST', body: payload });
+
+export const suspendProvider = async (id, reason) =>
+  admin(`/providers/${id}/suspend`, { method: 'POST', body: { reason } });
+
+export const unsuspendProvider = async (id) =>
+  admin(`/providers/${id}/unsuspend`, { method: 'POST' });

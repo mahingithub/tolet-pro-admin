@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage.jsx';
 import Overview from './pages/Overview.jsx';
 import UsageTracking from './pages/UsageTracking.jsx';
 import PropertyModeration from './pages/PropertyModeration.jsx';
+import ProviderVerification from './pages/ProviderVerification.jsx';
 import UserManagement from './pages/UserManagement.jsx';
 import Reports from './pages/Reports.jsx';
 import Subscriptions from './pages/Subscriptions.jsx';
@@ -42,6 +43,7 @@ function App() {
             <Route index element={<Overview />} />
             <Route path="usage" element={<UsageTracking />} />
             <Route path="properties" element={<PropertyModeration />} />
+            <Route path="providers" element={<ProviderVerification />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="reports" element={<Reports />} />
             <Route path="subscriptions" element={<Subscriptions />} />
