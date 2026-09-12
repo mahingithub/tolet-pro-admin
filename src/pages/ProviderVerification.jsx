@@ -221,6 +221,27 @@ function ProviderCard({ p, onAction, busy }) {
         </p>
       ) : null}
 
+      {/* Rows above a published government ceiling. ADVISORY — a cap is a
+          maximum, most flags are a forgotten price list, and nothing here
+          says to suspend anybody. It is shown because a reviewer deciding
+          whether to renew or suspend this provider should not have to go
+          looking for it on another page. Full detail lives at
+          /regulated-rates. */}
+      {p.priceCompliance?.overCapRows?.length ? (
+        <p className="text-[11px] bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-amber-900">
+          <span className="font-black">
+            {p.priceCompliance.overCapRows.length} price
+            {p.priceCompliance.overCapRows.length === 1 ? '' : 's'} above the published cap:
+          </span>{' '}
+          {p.priceCompliance.overCapRows
+            .map((r) => `${r.label?.bn || r.row} ${fmtMoney(r.price)} vs ${fmtMoney(r.cap)}`)
+            .join(' · ')}
+          <span className="text-amber-700">
+            {' '}— prices last updated {fmtDate(p.pricesUpdatedAt)}.
+          </span>
+        </p>
+      ) : null}
+
       {/* Expanded review panel */}
       {open ? (
         loadingDetail ? <LoadingState label="Loading documents" /> : (
@@ -251,9 +272,15 @@ function ProviderCard({ p, onAction, busy }) {
             {detail?.owner ? (
               <div className="text-[11px] text-gray-600 bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
                 <p>
+                  {/* A merchant account is a LOGIN — there is no personal KYC
+                      status on it, and the server never sends one (see the
+                      note in admin.provider.controller.getProvider). The
+                      identity being checked belongs to the BUSINESS, in the
+                      Documents panel above; this line printed "KYC undefined"
+                      while implying a second check that does not exist. */}
                   <span className="font-black text-gray-700">Owner account:</span>{' '}
                   {detail.owner.name} · member since {fmtDate(detail.owner.memberSince)} ·
-                  {' '}KYC {detail.owner.kycStatus}
+                  {' '}phone {detail.owner.phoneVerified ? 'verified' : 'unverified'}
                 </p>
                 {detail.owner.isBanned ? (
                   <p className="text-red-700 font-black flex items-center gap-1">

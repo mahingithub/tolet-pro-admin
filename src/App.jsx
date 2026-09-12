@@ -9,6 +9,8 @@ import AdminLayout from './components/AdminLayout.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import Overview from './pages/Overview.jsx';
 import UsageTracking from './pages/UsageTracking.jsx';
+import ServiceMonitoring from './pages/ServiceMonitoring.jsx';
+import RegulatedRates from './pages/RegulatedRates.jsx';
 import PropertyModeration from './pages/PropertyModeration.jsx';
 import ProviderVerification from './pages/ProviderVerification.jsx';
 import UserManagement from './pages/UserManagement.jsx';
@@ -42,8 +44,17 @@ function App() {
           >
             <Route index element={<Overview />} />
             <Route path="usage" element={<UsageTracking />} />
+            {/* Reading the marketplace is Insight, not Moderation — it is the
+                only thing that still knows whether provider↔tenant works now
+                that admin is not in the middle of it. The verification QUEUE
+                stays at /providers under Moderation. */}
+            <Route path="marketplace" element={<ServiceMonitoring />} />
             <Route path="properties" element={<PropertyModeration />} />
             <Route path="providers" element={<ProviderVerification />} />
+            {/* Sits with Moderation rather than Insight: entering a circular
+                is an act of moderation on the directory, and the flagged
+                list below the form is a review queue. */}
+            <Route path="regulated-rates" element={<RegulatedRates />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="reports" element={<Reports />} />
             <Route path="subscriptions" element={<Subscriptions />} />

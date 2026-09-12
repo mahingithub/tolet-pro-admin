@@ -34,3 +34,6 @@ test_*.js
 test_*.cjs
 test_*.mjs
 capacitor.config.*
+src/test/
+*.test.js
+*.test.jsx

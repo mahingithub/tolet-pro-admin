@@ -228,3 +228,74 @@ export const suspendProvider = async (id, reason) =>
 
 export const unsuspendProvider = async (id) =>
   admin(`/providers/${id}/unsuspend`, { method: 'POST' });
+
+// ─── Marketplace monitoring ─────────────────────────────────────────────────
+// কত প্রোভাইডার × কত ইউজার × কত সংযোগ.
+//
+// Admin deliberately does not sit in the middle of a provider↔tenant order, so
+// this is the only thing that still knows whether the marketplace works. The
+// server ships a `definitions` map alongside the numbers — render it as the
+// hint under each figure rather than writing a second description here, or the
+// label and the query that produced it drift apart.
+//
+// `days` must be one of the windows the server offers (7 | 30 | 90); anything
+// else falls back to 30 rather than 400ing.
+// Returns { headline, supply, demand, liquidity, orders, categories, areas,
+//           trend, topProviders, coverage, definitions }.
+export const getMarketplaceStats = async (days = 30) => {
+  const data = await admin(`/marketplace?days=${days}`);
+  return data.stats || {};
+};
+
+// ─── Published price ceilings (BERC / BTRC) ─────────────────────────────────
+// BERC re-announces the LPG maximum monthly and BTRC's entry broadband tiers
+// move occasionally, so the numbers cannot live in a config file — a value
+// baked into a deploy goes wrong on OUR release cycle rather than the
+// regulator's. An admin types the circular in here when it lands.
+//
+// A CAP IS A MAXIMUM, NOT A PRICE. Nothing derived from these numbers may set
+// or rewrite a provider's price, hide a shop for selling below the ceiling, or
+// describe anybody as overcharging — we know what was published, not what was
+// agreed at the door. It flags a row for review and nudges the shopkeeper,
+// and that is all. See services/priceCompliance.service.js.
+
+// Which rows are regulated at all (from the registry) alongside the rates on
+// file, so the console renders a COMPLETE form rather than only the rows
+// somebody already filled in. `maxPrice: null` means no circular on file —
+// a different thing from a ceiling of zero.
+// Returns { categories: [{ category, label, authority, note, field, rows[] }] }.
+export const getRegulatedRates = async () => {
+  const data = await admin('/regulated-rates');
+  return data.categories || [];
+};
+
+// Every announcement ever entered for a row, newest first. History is kept and
+// never overwritten: a compliance check against last month has to use last
+// month's ceiling, the same way an order freezes its unit prices.
+export const getRegulatedRateHistory = async (filter = {}) => {
+  const qs = toQuery(filter);
+  const data = await admin(qs ? `/regulated-rates/history?${qs}` : '/regulated-rates/history');
+  return data.rates || [];
+};
+
+// One row per call. A circular usually sets several sizes at once, but they go
+// up individually so a typo in the 45kg price cannot roll back a correct 12kg
+// one. Re-submitting the SAME effectiveFrom corrects that announcement; a new
+// date becomes its own row.
+export const saveRegulatedRate = async (payload) =>
+  admin('/regulated-rates', { method: 'POST', body: payload });
+
+// Re-run the sweep now rather than waiting for the nightly one — what an admin
+// wants immediately after typing in a new circular.
+// Returns { swept, flagged, nudged }.
+export const runPriceCheck = async () =>
+  admin('/regulated-rates/check', { method: 'POST' });
+
+// The providers currently priced above a ceiling. A REVIEW QUEUE, not an
+// accusation list: most flags are a stale price list, which is why the payload
+// carries `pricesUpdatedAt` right next to the two numbers.
+// Returns { providers[], count }.
+export const getFlaggedProviders = async (filter = {}) => {
+  const qs = toQuery(filter);
+  return admin(qs ? `/regulated-rates/flagged?${qs}` : '/regulated-rates/flagged');
+};
