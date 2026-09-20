@@ -64,8 +64,13 @@ const ROLE_FILTER_OPTIONS = [
 ];
 
 const CHANNELS = [
-  { key: 'inapp', label: 'In-App Pop-up', icon: Bell, hint: 'Notification row + live toast if the user is online. No consent gate.' },
-  { key: 'push', label: 'Push', icon: Smartphone, hint: 'FCM + web-push. Skips users who turned marketing push off.' },
+  // The hint spells out what in-app does NOT do, because "reaches 100%" invites
+  // exactly the wrong conclusion. It reaches every account — as a row in their
+  // bell. A phone that is in someone's pocket buzzes only for PUSH, so an
+  // in-app-only campaign is silent until each person next opens the app, which
+  // is indistinguishable from "the notification never arrived".
+  { key: 'inapp', label: 'In-App Pop-up', icon: Bell, hint: 'A row in the bell for everyone, plus a live pop-up for whoever has the app open. Does NOT reach a closed app — pair it with Push for that.' },
+  { key: 'push', label: 'Push', icon: Smartphone, hint: 'FCM + web-push. The only channel that reaches a phone in someone’s pocket. Skips users who turned marketing push off.' },
   { key: 'sms', label: 'SMS', icon: MessageCircle, hint: 'Costs money per message. Skips users with SMS alerts off.' },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, hint: 'Approved template only. Skips users who never opted in.' },
 ];
@@ -169,6 +174,12 @@ export default function Subscriptions() {
   // Banned users appear in the table but are excluded from a blast, so this —
   // not `total` — is the number of people an offer will actually reach.
   const [reachable, setReachable] = useState(0);
+  // How far each individual channel gets within that audience. Every channel
+  // but in-app is consent-gated, and the gates differ wildly: on a typical
+  // audience in-app reaches everyone and WhatsApp reaches the handful who
+  // explicitly opted in. Shown in the composer so that gap is visible BEFORE
+  // the send, not inferred afterwards from a "31 skipped" line.
+  const [reach, setReach] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Filters — these define the blast audience, not just the table view.
@@ -216,6 +227,10 @@ export default function Subscriptions() {
       // Fall back to `total` if an older backend omits `reachable`, so the
       // count degrades to the previous behaviour instead of showing 0.
       setReachable(typeof data.reachable === 'number' ? data.reachable : (data.total || 0));
+      // null (not {}) when the backend predates this field, so the composer can
+      // tell "no data" from "zero reachable" and simply omit the line rather
+      // than claiming every channel reaches nobody.
+      setReach(data.reach || null);
     } catch (err) {
       if (reqId !== reqIdRef.current) return;
       toast.error(err.message || 'Failed to load subscriptions');
@@ -465,8 +480,14 @@ export default function Subscriptions() {
       {modalOpen && (
         <OfferModal
           audienceSize={reachable}
+          reach={reach}
           filters={filters}
           caps={caps}
+          // Lets the composer narrow the audience to match a role-gated
+          // destination without the admin having to close it, find the Role
+          // select, and start over. The page reloads underneath and the modal
+          // re-renders with the new audience size.
+          onSetRole={(v) => changeFilter(setRole, v)}
           onClose={() => setModalOpen(false)}
           onSent={() => setLinkRefresh((n) => n + 1)}
         />
@@ -561,7 +582,7 @@ function CopyLink({ url }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Offer composer
 // ─────────────────────────────────────────────────────────────────────────────
-function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
+function OfferModal({ audienceSize, reach, filters, caps, onSetRole, onClose, onSent }) {
   const [channels, setChannels] = useState(['inapp']);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -699,6 +720,11 @@ function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
               <div className="grid sm:grid-cols-2 gap-2 mt-2">
                 {CHANNELS.map((c) => {
                   const on = channels.includes(c.key);
+                  // How many of the audience this channel can actually reach.
+                  // Undefined on an older backend — the line is then omitted
+                  // rather than guessed at.
+                  const n = reach ? reach[c.key] : undefined;
+                  const short = typeof n === 'number' && n < audienceSize;
                   return (
                     <button
                       key={c.key}
@@ -715,6 +741,21 @@ function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
                       </div>
                       <div className="min-w-0">
                         <p className={`text-[13px] font-black ${on ? 'text-[#ba0036]' : 'text-gray-700'}`}>{c.label}</p>
+                        {/* THE NUMBER THAT WAS MISSING. "Send to 32" was true of
+                            the audience and false of every consent-gated
+                            channel in it, so a WhatsApp blast that correctly
+                            reached the 1 person who opted in looked like a
+                            gateway failure. Stating it per channel, before the
+                            send, is the whole fix. */}
+                        {typeof n === 'number' && (
+                          <p className={`text-[10px] font-black leading-tight mt-0.5 ${
+                            n === 0 ? 'text-red-600' : short ? 'text-amber-600' : 'text-emerald-600'
+                          }`}>
+                            {n === 0
+                              ? `Reaches nobody in this audience of ${audienceSize}`
+                              : `Reaches ${n} of ${audienceSize}`}
+                          </p>
+                        )}
                         <p className="text-[10px] font-bold text-gray-400 leading-tight mt-0.5">{channelHint(c, caps)}</p>
                       </div>
                     </button>
@@ -812,15 +853,31 @@ function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
                 </p>
               )}
               {roleGated && !audienceMatchesTarget && (
-                <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-start gap-1 leading-snug">
-                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-                  {targetAccess === 'landlord'
-                    ? 'Landlord accounts only. A tenant who taps this is redirected to their own dashboard instead'
-                    : 'Tenant accounts only. A landlord who taps this is redirected away from it'}
-                  {' — set the Role filter to '}
-                  {targetAccess === 'landlord' ? 'Landlords' : 'Tenants'}
-                  {', or pick a page both can open.'}
-                </p>
+                <div className="mt-1">
+                  <p className="text-[10px] font-bold text-amber-600 flex items-start gap-1 leading-snug">
+                    <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                    <span>
+                      {targetAccess === 'landlord'
+                        ? 'Landlord accounts only. A tenant who taps this is redirected to their own dashboard instead'
+                        : 'Tenant accounts only. A landlord who taps this is redirected away from it'}
+                      {' — so this campaign lands nowhere for everyone in the audience who is not a '}
+                      {targetAccess}.
+                    </span>
+                  </p>
+                  {/* The warning used to end by naming a filter that lives on
+                      the page BEHIND this modal, which meant closing the
+                      composer and retyping the message to act on it. Almost
+                      nobody did, and a landlord-only offer went out to a mixed
+                      audience — the "category-wise sending doesn't work"
+                      symptom. The fix is now one tap from the warning. */}
+                  <button
+                    type="button"
+                    onClick={() => onSetRole?.(targetAccess)}
+                    className="mt-1.5 text-[10px] font-black text-[#ba0036] underline underline-offset-2 hover:opacity-80"
+                  >
+                    Narrow the audience to {targetAccess === 'landlord' ? 'landlords' : 'tenants'} only
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1086,6 +1143,20 @@ function ResultPanel({ result, onClose }) {
                   a blast under-delivers. */}
               {why && (
                 <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">{why}</p>
+              )}
+              {/* DELIVERED, AND SILENT. A subset of `sent`, not a separate
+                  bucket: these pushes arrived inside the recipient's own
+                  Do-Not-Disturb window, so Android put them on the low-
+                  importance channel — shade only, no sound, no banner. Without
+                  this line the campaign reads as fully delivered while the
+                  recipients report hearing nothing, which is exactly how a
+                  working quiet-hours feature gets mistaken for broken push. */}
+              {s.silent > 0 && (
+                <p className="text-[10px] font-bold text-indigo-600 mt-1.5 leading-snug flex items-start gap-1">
+                  <Clock size={11} className="mt-0.5 shrink-0" />
+                  {s.silent} of those arrived silently — it was inside their quiet hours, so it is
+                  waiting in the notification shade with no sound or banner.
+                </p>
               )}
             </div>
           );
