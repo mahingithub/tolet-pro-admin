@@ -52,6 +52,17 @@ const WHATSAPP_FILTER_OPTIONS = [
   { value: 'false', label: 'Not opted in' },
 ];
 
+// Matched against the account's unlocked `roles[]`, so someone who is both a
+// landlord and a tenant appears under both — they are both, and each campaign
+// is genuinely relevant to them. Pair this with the destination warning in the
+// composer: a landlord-only page ('/subscription') sent to a tenant audience is
+// silently redirected to their own dashboard, and this filter is the fix.
+const ROLE_FILTER_OPTIONS = [
+  { value: '', label: 'Role: any' },
+  { value: 'landlord', label: 'Landlords' },
+  { value: 'tenant', label: 'Tenants' },
+];
+
 const CHANNELS = [
   { key: 'inapp', label: 'In-App Pop-up', icon: Bell, hint: 'Notification row + live toast if the user is online. No consent gate.' },
   { key: 'push', label: 'Push', icon: Smartphone, hint: 'FCM + web-push. Skips users who turned marketing push off.' },
@@ -164,6 +175,7 @@ export default function Subscriptions() {
   const [tier, setTier] = useState('');
   const [installed, setInstalled] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [role, setRole] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
@@ -174,8 +186,8 @@ export default function Subscriptions() {
   const [linkRefresh, setLinkRefresh] = useState(0);
 
   const filters = useMemo(
-    () => ({ tier, installed, whatsapp, search }),
-    [tier, installed, whatsapp, search],
+    () => ({ tier, installed, whatsapp, role, search }),
+    [tier, installed, whatsapp, role, search],
   );
 
   // Monotonic request id. Filter changes fire overlapping requests and the
@@ -228,7 +240,7 @@ export default function Subscriptions() {
     changeFilter(setSearch, searchInput.trim());
   };
 
-  const filtersActive = Boolean(tier || installed || whatsapp || search);
+  const filtersActive = Boolean(tier || installed || whatsapp || role || search);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const bannedInFilter = Math.max(0, total - reachable);
 
@@ -284,6 +296,12 @@ export default function Subscriptions() {
           />
 
           <Select
+            value={role}
+            onChange={(e) => changeFilter(setRole, e.target.value)}
+            options={ROLE_FILTER_OPTIONS}
+          />
+
+          <Select
             value={whatsapp}
             onChange={(e) => changeFilter(setWhatsapp, e.target.value)}
             options={WHATSAPP_FILTER_OPTIONS}
@@ -301,7 +319,7 @@ export default function Subscriptions() {
               variant="ghost"
               onClick={() => {
                 setPage(1);
-                setTier(''); setInstalled(''); setWhatsapp('');
+                setTier(''); setInstalled(''); setWhatsapp(''); setRole('');
                 setSearch(''); setSearchInput('');
               }}
             >
@@ -591,6 +609,13 @@ function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
     const hit = (targets?.routes || []).find((r) => r.path === bare);
     return hit ? hit.access : 'public';
   }, [targetPath, targets]);
+  // Does the audience already exclude everyone the destination would bounce?
+  // The warning below used to end with "filter the audience" while offering no
+  // way to do it; now that the Role filter exists, the two are reconciled here
+  // so a correctly-targeted campaign is confirmed rather than warned about.
+  const roleGated = targetAccess === 'landlord' || targetAccess === 'tenant';
+  const audienceMatchesTarget = roleGated && filters?.role === targetAccess;
+
   // A link only ships on the channels that have no tap target of their own.
   const linkedChannels = channels.filter((c) => c === 'sms' || c === 'whatsapp');
 
@@ -779,17 +804,22 @@ function OfferModal({ audienceSize, filters, caps, onClose, onSent }) {
                   redirects them to their own dashboard, so the campaign appears
                   to have worked while landing half the audience nowhere near
                   the offer. */}
-              {targetAccess === 'landlord' && (
-                <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-start gap-1 leading-snug">
-                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-                  Landlord accounts only. A tenant who taps this is redirected to their own
-                  dashboard instead — filter the audience, or pick a page both can open.
+              {roleGated && audienceMatchesTarget && (
+                <p className="text-[10px] font-bold text-emerald-600 mt-1 flex items-start gap-1 leading-snug">
+                  <Check size={11} strokeWidth={3} className="mt-0.5 shrink-0" />
+                  {targetAccess === 'landlord' ? 'Landlord' : 'Tenant'} accounts only — and the
+                  audience is filtered to exactly that role, so everyone who taps this can open it.
                 </p>
               )}
-              {targetAccess === 'tenant' && (
+              {roleGated && !audienceMatchesTarget && (
                 <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-start gap-1 leading-snug">
                   <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-                  Tenant accounts only. A landlord who taps this is redirected away from it.
+                  {targetAccess === 'landlord'
+                    ? 'Landlord accounts only. A tenant who taps this is redirected to their own dashboard instead'
+                    : 'Tenant accounts only. A landlord who taps this is redirected away from it'}
+                  {' — set the Role filter to '}
+                  {targetAccess === 'landlord' ? 'Landlords' : 'Tenants'}
+                  {', or pick a page both can open.'}
                 </p>
               )}
             </div>
