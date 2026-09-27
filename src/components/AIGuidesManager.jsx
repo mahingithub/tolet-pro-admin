@@ -14,6 +14,7 @@ const EMPTY_GUIDE = {
   audience: 'all',
   deviceCategory: 'all',
   keywords: '',
+  durationSec: '',
 };
 
 const AIGuidesManager = () => {
@@ -130,6 +131,9 @@ const AIGuidesManager = () => {
                 placeholder="e.g. https://www.youtube.com/watch?v=..."
                 className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium focus:ring-2 focus:ring-[#ba0036]/20 outline-none"
               />
+              <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">
+                YouTube-এ ভিডিওটি Public বা Unlisted রাখুন — Private ভিডিও ওয়েবসাইট ও অ্যাপে প্লে হয় না।
+              </p>
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs font-black text-gray-700 uppercase tracking-widest mb-1.5">Match Keywords (comma-separated)</label>
@@ -158,6 +162,12 @@ const AIGuidesManager = () => {
                 <option value="subscription">Subscription Page</option>
                 <option value="checkout">Checkout Page</option>
                 <option value="free_trial_mode">Free Trial Mode (share task popup)</option>
+                <option value="feature_search">Feature · বাসা খুঁজুন (homepage card + /to-let)</option>
+                <option value="feature_mess">Feature · মেসের হিসাব (homepage card + /meal-manager)</option>
+                <option value="feature_rent_book">Feature · ভাড়ার খাতা (homepage card + /tenant-manager)</option>
+                <option value="feature_roommate_wallet">Feature page · রুমমেট ওয়ালেট</option>
+                <option value="feature_house_manager">Feature page · হাউস ম্যানেজার</option>
+                <option value="feature_home_services">Feature page · হোম সার্ভিস</option>
               </select>
             </div>
             <div>
@@ -190,6 +200,20 @@ const AIGuidesManager = () => {
               </select>
               <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">
                 কোন ডিভাইসে ভিডিওটি দেখানো হবে সেটি নির্বাচন করুন।
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-black text-gray-700 uppercase tracking-widest mb-1.5">Length (seconds)</label>
+              <input
+                type="number"
+                min="0"
+                value={currentGuide.durationSec ?? ''}
+                onChange={(e) => setCurrentGuide({ ...currentGuide, durationSec: e.target.value })}
+                placeholder="e.g. 75"
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-medium focus:ring-2 focus:ring-[#ba0036]/20 outline-none"
+              />
+              <p className="text-[10px] font-bold text-gray-400 mt-1.5 leading-snug">
+                ভিডিওর উপর "১:১৫" দেখায় — ছোট, জানা দৈর্ঘ্যের ভিডিও মানুষ বেশি প্লে করে। ৬০–৯০ সেকেন্ড রাখুন।
               </p>
             </div>
             <div>
@@ -266,6 +290,12 @@ const AIGuidesManager = () => {
                           subscription: { label: 'Subscription', cls: 'text-amber-600 bg-amber-50' },
                           checkout:     { label: 'Checkout',     cls: 'text-pink-600 bg-pink-50' },
                           free_trial_mode: { label: 'Free Trial Mode', cls: 'text-violet-600 bg-violet-50' },
+                          feature_search:    { label: 'Card · বাসা খুঁজুন', cls: 'text-sky-600 bg-sky-50' },
+                          feature_mess:      { label: 'Card · মেসের হিসাব', cls: 'text-sky-600 bg-sky-50' },
+                          feature_rent_book: { label: 'Card · ভাড়ার খাতা', cls: 'text-sky-600 bg-sky-50' },
+                          feature_roommate_wallet: { label: 'Page · রুমমেট ওয়ালেট', cls: 'text-sky-600 bg-sky-50' },
+                          feature_house_manager:   { label: 'Page · হাউস ম্যানেজার', cls: 'text-sky-600 bg-sky-50' },
+                          feature_home_services:   { label: 'Page · হোম সার্ভিস', cls: 'text-sky-600 bg-sky-50' },
                         };
                         const meta = PLACEMENTS[g.placement] || PLACEMENTS.assistant;
                         const showAudience = g.placement === 'welcome' || g.placement === 'how_it_works';
