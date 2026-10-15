@@ -13,13 +13,13 @@ import { setSession, clearSession, getAdmin, getToken } from './session.js';
 export { getAdmin, getToken };
 
 /**
- * POST /admin/auth/login — { phone, password }.
+ * POST /admin/auth/login — { phone | email, password }.
  * On success, either:
  *   - Returns { requires2FA: true, tempToken } if 2FA is enabled (no session stored yet)
  *   - Stores the admin-scoped token + admin profile and returns the admin
  * A 403 (code 'admin_required') means valid credentials for a non-admin account.
  */
-export async function login({ phone, password, tempToken, token, is2FAVerification }) {
+export async function login({ phone, email, password, tempToken, token, is2FAVerification }) {
   // If this is a 2FA verification step
   if (is2FAVerification && tempToken && token) {
     const data = await apiFetch('/admin/auth/verify-2fa-login', {
@@ -31,10 +31,10 @@ export async function login({ phone, password, tempToken, token, is2FAVerificati
     return data.admin;
   }
 
-  // Initial login with phone + password
+  // Initial login with phone or email + password
   const data = await apiFetch('/admin/auth/login', {
     method: 'POST',
-    body: { phone, password },
+    body: email ? { email, password } : { phone, password },
     auth: false,
   });
 

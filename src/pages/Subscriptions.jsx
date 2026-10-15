@@ -28,6 +28,7 @@ import {
   listSubscriptions, sendSubscriptionOffer, listCampaignTargets, listCampaignLinks,
 } from '../services/adminService';
 import { useAuth } from '../context/AdminAuthContext.jsx';
+import SubscriptionPayments from '../components/SubscriptionPayments.jsx';
 import {
   PageContainer, PageHeader, Card, Tabs, Badge, Button, Select, SearchInput,
   StatCard,
@@ -298,6 +299,9 @@ export default function Subscriptions() {
         <StatCard layout="compact" icon={Smartphone} label="App installed" value={counts.appInstalled} tone="emerald" />
         <StatCard layout="compact" icon={MessageCircle} label="WhatsApp opt-in" value={counts.whatsappOptIn} tone="emerald" />
       </div>
+
+      {/* ── bKash / Nagad plan payments waiting for a person ── */}
+      <SubscriptionPayments />
 
       {/* ── Filters ── */}
       <Card padding="sm">

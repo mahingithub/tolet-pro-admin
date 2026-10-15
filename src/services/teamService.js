@@ -33,6 +33,18 @@ export const grantAdmin = async (userId, role) =>
 export const updateAdminRole = async (id, role) =>
   (await team(`/${encodeURIComponent(id)}/role`, { method: 'PUT', body: { role } })).admin;
 
+/**
+ * Create a staff login outright: { name, phone, email?, password, role }.
+ * They sign in with the phone or the email. 409 'phone_taken' means the
+ * number already has an app account — promote it with grantAdmin instead.
+ */
+export const createAdminAccount = async (payload) =>
+  (await team('/create', { method: 'POST', body: payload })).admin;
+
+/** Set a new password for a team member (signs them out everywhere). */
+export const setAdminPassword = async (id, password) =>
+  (await team(`/${encodeURIComponent(id)}/password`, { method: 'POST', body: { password } })).admin;
+
 /** Remove all admin roles from a user (back to a normal account). */
 export const revokeAdmin = async (id) =>
   (await team(`/${encodeURIComponent(id)}/revoke`, { method: 'POST' })).admin;

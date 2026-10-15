@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Home, Phone, Lock, Loader2, ShieldCheck, AlertCircle, Eye, EyeOff, ArrowRight, KeyRound,
+  Home, Phone, Mail, Lock, Loader2, ShieldCheck, AlertCircle, Eye, EyeOff, ArrowRight, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import { getSessionEndedReason, clearSessionEndedReason } from '../services/session.js';
 
-/** Strip the leading 0 a BD number often has (01742… → 1742…) + non-digits. */
-const normalizePhone = (raw) => raw.replace(/\D/g, '').replace(/^0+/, '');
-const toE164 = (local) => `+880${local}`;
+// One field takes either: anything with an @ is an email, the rest a phone
+// number in any usual form (01…, 880…, +880…) — the server normalises it.
+const isEmail = (v) => v.includes('@');
 
 /**
  * Why the previous session ended. Being dropped here mid-action with no
@@ -22,7 +22,7 @@ const ENDED_REASONS = {
 };
 
 /**
- * Dedicated admin login — phone + password, with optional 2FA step.
+ * Dedicated admin login — phone or email + password, with optional 2FA step.
  * If the backend returns requires2FA: true, we show the OTP input and call
  * the /verify-2fa-login endpoint instead.
  */
@@ -31,7 +31,7 @@ const LoginPage = () => {
   const [searchParams] = useSearchParams();
   const { login, isAuthenticated, booting } = useAuth();
 
-  const [phone, setPhone] = useState('');
+  const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,7 +68,8 @@ const LoginPage = () => {
     setError('');
     setEndedNotice('');
     try {
-      const result = await login({ phone: toE164(phone), password });
+      const id = identity.trim();
+      const result = await login(isEmail(id) ? { email: id, password } : { phone: id, password });
       
       // Check if 2FA is required
       if (result?.requires2FA && result?.tempToken) {
@@ -84,7 +85,7 @@ const LoginPage = () => {
         ? "This account doesn't have admin access."
         : err?.code === 'account_locked'
           ? 'Too many attempts. Try again in a few minutes.'
-          : err?.serverMessage || 'Login failed. Check your phone and password.';
+          : err?.serverMessage || 'Login failed. Check your phone or email and password.';
       setError(msg);
     } finally {
       setIsLoading(false);
@@ -196,21 +197,21 @@ const LoginPage = () => {
 
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div>
-                  <label className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
-                    Phone number
+                  <label htmlFor="admin-identity" className="block text-[11px] font-bold text-white/60 mb-1.5 ml-1 uppercase tracking-wider">
+                    Phone or email
                   </label>
                   <div className="relative flex items-center bg-white/5 border border-white/10 rounded-xl focus-within:border-[#ba0036] focus-within:bg-white/10 transition-all overflow-hidden">
-                    <div className="pl-3.5 pr-2.5 text-white/40"><Phone size={16} /></div>
-                    <div className="px-1.5 py-3 border-l border-white/10 text-white/60 font-bold text-sm">+880</div>
+                    <div className="pl-3.5 pr-2.5 text-white/40">{isEmail(identity) ? <Mail size={16} /> : <Phone size={16} />}</div>
                     <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(normalizePhone(e.target.value).slice(0, 10))}
-                      maxLength={10}
-                      placeholder="1XXXXXXXXX"
-                      inputMode="numeric"
+                      id="admin-identity"
+                      type="text"
+                      value={identity}
+                      onChange={(e) => setIdentity(e.target.value.slice(0, 254))}
+                      placeholder="01XXXXXXXXX or you@email.com"
                       autoComplete="username"
-                      className="w-full bg-transparent py-3 pl-2 pr-4 text-sm font-bold text-white placeholder:text-white/30 outline-none tracking-wide"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      className="w-full bg-transparent py-3 pl-1 pr-4 text-sm font-bold text-white placeholder:text-white/30 outline-none"
                       required
                     />
                   </div>
@@ -247,7 +248,7 @@ const LoginPage = () => {
 
                 <button
                   type="submit"
-                  disabled={isLoading || phone.length < 10 || !password}
+                  disabled={isLoading || identity.trim().length < 5 || !password}
                   className="w-full mt-2 flex items-center justify-center gap-2 bg-[#ba0036] text-white py-3.5 rounded-xl font-bold text-sm shadow-[0_6px_20px_rgba(186,0,54,0.35)] hover:bg-[#a5002f] active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? <Loader2 className="animate-spin" size={18} /> : <>Sign in <ArrowRight size={16} /></>}

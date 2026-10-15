@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ShieldAlert, Crown, Users,
-  Loader2, UserMinus, AlertTriangle, Check,
+  Loader2, UserMinus, AlertTriangle, Check, UserPlus, KeyRound, Eye, EyeOff, Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AdminAuthContext.jsx';
 import {
   listTeam, searchCandidates, grantAdmin, updateAdminRole, revokeAdmin,
+  createAdminAccount, setAdminPassword,
 } from '../services/teamService.js';
 import {
   PageContainer, PageHeader, Card, CardHeader, Badge, Button, Select,
@@ -40,6 +41,13 @@ const errMsg = (err) => {
     invalid_role: 'Invalid admin role.',
     user_not_found: 'User not found.',
     super_admin_required: 'Only super admins can manage the admin team.',
+    phone_taken: 'This number already has an account — search for it above and grant a role instead.',
+    email_taken: 'Another admin already uses this email.',
+    weak_password: 'The password needs at least 8 characters.',
+    invalid_phone: 'Enter a valid phone number, e.g. 01712345678.',
+    invalid_email: 'Enter a valid email, or leave it blank.',
+    invalid_name: 'The name needs at least 2 characters.',
+    not_admin: 'Only admin team members can have their password set here.',
   };
   return map[err?.code] || err?.serverMessage || err?.message || 'Action failed.';
 };
@@ -55,7 +63,7 @@ const Avatar = ({ user }) => (
 );
 
 // ─── A row in the current-admins list ───────────────────────────────────────
-const AdminRow = ({ admin, isSelf, isLastSuperAdmin, busy, onChangeRole, onRevoke }) => {
+const AdminRow = ({ admin, isSelf, isLastSuperAdmin, busy, onChangeRole, onRevoke, onSetPassword }) => {
   const locked = isSelf || (admin.adminRole === 'super_admin' && isLastSuperAdmin);
   const lockReason = isSelf
     ? "You can't change your own role"
@@ -87,6 +95,15 @@ const AdminRow = ({ admin, isSelf, isLastSuperAdmin, busy, onChangeRole, onRevok
           onChange={(e) => onChangeRole(admin, e.target.value)}
           options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
         />
+
+        <Button
+          icon={KeyRound}
+          disabled={isSelf || busy}
+          title={isSelf ? 'Change your own password in Account settings' : 'Set a new password (signs them out)'}
+          onClick={() => onSetPassword(admin)}
+        >
+          Set password
+        </Button>
 
         <Button
           variant="danger"
@@ -212,6 +229,20 @@ const AdminTeam = () => {
     }
   };
 
+  const handleSetPassword = async (admin) => {
+    const password = window.prompt(`New password for ${admin.name} (at least 8 characters). They'll be signed out and must use it to sign in.`);
+    if (password == null) return;
+    setBusyId(admin.id);
+    try {
+      await setAdminPassword(admin.id, password);
+      toast.success(`New password set for ${admin.name}. Share it with them privately.`);
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleRevoke = async (admin) => {
     if (!window.confirm(`Remove admin access from ${admin.name}? They'll become a regular user.`)) return;
     setBusyId(admin.id);
@@ -256,11 +287,14 @@ const AdminTeam = () => {
         ))}
       </div>
 
+      {/* Create a staff login */}
+      <CreateAdminCard onCreated={refresh} />
+
       {/* Add an admin */}
       <Card>
         <CardHeader
-          title="Add an admin"
-          description="Search any user, then grant them a console role."
+          title="Promote an existing user"
+          description="Already has a To-Let Pro account? Search them, then grant a console role. They sign in with their own password."
           className="mb-3"
         />
         <div className="flex">
@@ -322,12 +356,129 @@ const AdminTeam = () => {
                 busy={busyId === a.id}
                 onChangeRole={handleChangeRole}
                 onRevoke={handleRevoke}
+                onSetPassword={handleSetPassword}
               />
             ))}
           </div>
         )}
       </div>
     </PageContainer>
+  );
+};
+
+// ─── Create a staff login (name, phone, email?, password, role) ──────────────
+const EMPTY_FORM = { name: '', phone: '', email: '', password: '', role: 'moderator' };
+
+// 12 characters from an alphabet without look-alikes (no 0/O, 1/l/I).
+const generatePassword = () => {
+  const abc = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(bytes, (b) => abc[b % abc.length]).join('');
+};
+
+const CreateAdminCard = ({ onCreated }) => {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [showPw, setShowPw] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // What to hand over, shown once after creating — the password isn't kept anywhere.
+  const [created, setCreated] = useState(null);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const admin = await createAdminAccount(form);
+      setCreated({ ...admin, password: form.password });
+      setForm(EMPTY_FORM);
+      setShowPw(false);
+      toast.success(`${admin.name} can now sign in as ${ROLE_LABEL[admin.adminRole]}.`);
+      onCreated();
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const copyDetails = async () => {
+    const text = [
+      `Admin console: ${window.location.origin}`,
+      `Sign in with: ${created.phone}${created.email ? ` or ${created.email}` : ''}`,
+      `Password: ${created.password}`,
+      'Please change the password after your first sign-in (Account settings).',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Login details copied');
+    } catch {
+      toast.error('Could not copy — select the details and copy by hand');
+    }
+  };
+
+  const input = 'w-full px-3 py-2.5 text-[13px] font-bold text-gray-900 border border-gray-200 rounded-xl bg-white focus:border-[#ba0036] outline-none';
+  const label = 'block text-[11px] font-black text-gray-500 mb-1';
+
+  return (
+    <Card>
+      <CardHeader
+        title="Create admin account"
+        description="Make a console login for a new team member. They sign in with the phone or the email and this password, and can change the password themselves afterwards."
+        className="mb-4"
+      />
+      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="new-admin-name" className={label}>Full name</label>
+          <input id="new-admin-name" required minLength={2} value={form.name} onChange={set('name')} className={input} />
+        </div>
+        <div>
+          <label htmlFor="new-admin-role" className={label}>Role</label>
+          <Select
+            id="new-admin-role"
+            value={form.role}
+            onChange={set('role')}
+            options={ROLES.map((r) => ({ value: r.value, label: `${r.label} — ${r.hint}` }))}
+          />
+        </div>
+        <div>
+          <label htmlFor="new-admin-phone" className={label}>Phone (sign-in)</label>
+          <input id="new-admin-phone" type="tel" required placeholder="01XXXXXXXXX" value={form.phone} onChange={set('phone')} className={input} />
+        </div>
+        <div>
+          <label htmlFor="new-admin-email" className={label}>Email (optional — also works for sign-in)</label>
+          <input id="new-admin-email" type="email" placeholder="name@example.com" value={form.email} onChange={set('email')} className={input} />
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor="new-admin-password" className={label}>Password (at least 8 characters)</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input id="new-admin-password" type={showPw ? 'text' : 'password'} required minLength={8} autoComplete="new-password"
+                value={form.password} onChange={set('password')} className={`${input} pr-10`} />
+              <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? 'Hide password' : 'Show password'}
+                className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-700">
+                {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            <Button onClick={() => { setForm((f) => ({ ...f, password: generatePassword() })); setShowPw(true); }}>Generate</Button>
+          </div>
+        </div>
+        <div className="sm:col-span-2">
+          <Button type="submit" variant="primary" icon={UserPlus} loading={saving}>Create account</Button>
+        </div>
+      </form>
+
+      {created && (
+        <div className="mt-4 p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-1">
+          <p className="text-[12px] font-black text-emerald-800">Account ready — share these details privately. The password is shown only now.</p>
+          <p className="text-[12px] font-bold text-gray-700">Sign in with: {created.phone}{created.email ? ` or ${created.email}` : ''}</p>
+          <p className="text-[12px] font-bold text-gray-700">Password: <span className="font-mono">{created.password}</span></p>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" icon={Copy} onClick={copyDetails}>Copy login details</Button>
+            <Button size="sm" variant="ghost" onClick={() => setCreated(null)}>Done</Button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 };
 

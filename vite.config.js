@@ -1,10 +1,25 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// A local dev URL can otherwise be silently baked into a production bundle.
+// Deployment environments must provide their own reachable HTTPS API base.
+const assertProductionEnv = (mode) => {
+  if (mode !== 'production') return
+  const api = loadEnv(mode, process.cwd(), 'VITE_').VITE_API_BASE_URL
+  let url
+  try { url = new URL(api) } catch { /* Report the configuration error below. */ }
+  const host = url?.hostname.toLowerCase().replace(/\.$/, '')
+  if (!url || url.protocol !== 'https:' || /^(localhost|127\..*|0\.0\.0\.0|\[::1\])$/.test(host) || host.endsWith('.localhost')) {
+    throw new Error('Production builds require VITE_API_BASE_URL to be a non-local HTTPS URL. Set it in the deployment environment or .env.production.')
+  }
+}
 
 // Standalone admin console. Runs on :5174 in dev so it never collides with the
 // public app (:5173). The backend allow-lists this origin via ADMIN_CORS_ORIGINS.
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  assertProductionEnv(mode)
+  return {
   // ─── Tests ────────────────────────────────────────────────────────────────
   // `jsdom` rather than the default node environment: almost everything worth
   // testing here touches localStorage, geolocation or the DOM.
@@ -30,4 +45,5 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
   },
+  }
 })

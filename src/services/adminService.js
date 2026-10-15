@@ -176,6 +176,45 @@ export const listCampaignLinks = async (limit) =>
 export const sendSubscriptionOffer = async (payload) =>
   admin('/subscriptions/send-offer', { method: 'POST', body: payload });
 
+// ─── Plan payments (bKash / Nagad Send Money) ───────────────────────────────
+// Hosts pay by Send Money and submit the TrxID; the wallet phone's forwarded
+// SMS accepts most automatically. These are the ones left for a person.
+// Returns { payments, payTo, smsCheck: { configured, lastSmsAt } }.
+export const listSubscriptionPayments = async (status = 'pending') =>
+  admin(`/subscription-payments?${toQuery({ status })}`);
+
+export const approveSubscriptionPayment = async (id) =>
+  (await admin(`/subscription-payments/${encodeURIComponent(id)}/approve`, { method: 'POST' })).payment;
+
+// `reason` is shown to the host verbatim, so it should say what to fix.
+export const rejectSubscriptionPayment = async (id, reason) =>
+  (await admin(`/subscription-payments/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } })).payment;
+
+// "Add Payment System" — super admins only. A method is
+// { type: bkash|nagad|rocket|bank, accountNumber, accountName, accountType,
+//   bankName, branchName, routingNumber, instructions, enabled }.
+// Each call returns every method.
+export const addPaymentMethod = async (method) =>
+  (await admin('/subscription-payments/methods', { method: 'POST', body: method })).methods;
+
+export const updatePaymentMethod = async (id, method) =>
+  (await admin(`/subscription-payments/methods/${encodeURIComponent(id)}`, { method: 'PUT', body: method })).methods;
+
+export const deletePaymentMethod = async (id) =>
+  (await admin(`/subscription-payments/methods/${encodeURIComponent(id)}`, { method: 'DELETE' })).methods;
+
+// Super admins only. `prices` is the MONTHLY prices { plus_monthly: 19, pro_monthly: 49 };
+// yearly prices follow from `yearlyDiscount` (0–50 %). Returns the plans.
+export const updatePlanPrices = async (prices, yearlyDiscount) =>
+  (await admin('/subscription-payments/prices', { method: 'PUT', body: { prices, yearlyDiscount } })).plans;
+
+// A new key for the wallet phone's SMS forwarder — returned once, never again.
+export const createSmsKey = async () =>
+  (await admin('/subscription-payments/sms-key', { method: 'POST' })).key;
+
+export const removeSmsKey = async () =>
+  admin('/subscription-payments/sms-key', { method: 'DELETE' });
+
 // ─── Service provider verification ──────────────────────────────────────────
 // The ONE point at which admin touches a provider: identity checked once, fee
 // confirmed once, then out of the way. Nothing here is reachable per order.
